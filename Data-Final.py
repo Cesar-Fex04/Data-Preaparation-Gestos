@@ -3,44 +3,40 @@
   DATA PREPARATION - RECONOCIMIENTO DE GESTOS EN TABLETA
   Inteligencia Artificial  —  Script FINAL (limpieza DTW)
 =============================================================
-  NOVEDADES vs versión anterior:
-  • PASO 3.5 — DETECCIÓN DE MUESTRAS BASURA con DTW
-    (Dynamic Time Warping — tolera variaciones de velocidad
-     y número de puntos, compara la FORMA completa)
+  DIVISION DE DATOS (3 capas — indicacion de la maestra):
+  ┌─────────────────────────────────────────────────────┐
+  │  DATASET LIMPIO  (100%)                             │
+  │  ├── 20% VALIDACION FINAL  ← separar PRIMERO,      │
+  │  │                            no tocar hasta el fin │
+  │  └── 80% de TRABAJO  (tratado como 100%)            │
+  │       ├── 80% del 80% = TRAIN                       │
+  │       └── 20% del 80% = TEST                        │
+  │                                                     │
+  │  Cross Validation (5-Fold) sobre TRAIN              │
+  │  → verifica que no haya overfitting                 │
+  │  Evaluacion en TEST → resultado intermedio          │
+  │  Evaluacion en VALIDACION → resultado final         │
+  └─────────────────────────────────────────────────────┘
 
-    Estrategia en 2 rondas:
-    ─────────────────────────────────────────────────────
-    RONDA 1 — Filtro rápido de ángulo global:
-      Descarta muestras cuyo ángulo global se aleja más de
-      ANGULO_TOLERANCIA_DEG del ángulo esperado del gesto.
-      Elimina gestos completamente invertidos/erróneos.
+  Columna "split" en el CSV: "train" | "test" | "validation"
 
-    RONDA 2 — Filtro DTW (forma completa):
-      1. Normaliza cada trayectoria (interp → N puntos,
-         centrar en origen, escalar por longitud total).
-      2. Calcula la mediana punto a punto de las muestras
-         que pasaron la ronda 1 → trayectoria de referencia.
-      3. Computa distancia DTW 2D de cada muestra vs ref.
-      4. Descarta muestras con dist > media + K_STD * std.
-         (K_STD=2.0 conservador; bajar a 1.5 si persiste ruido)
-    ─────────────────────────────────────────────────────
-    Todas las eliminadas quedan en basura_detectada.csv
-    con su motivo y distancia DTW.
+  LIMPIEZA DE BASURA (2 rondas DTW):
+  • Ronda 1 — angulo global fuera del rango esperado
+  • Ronda 2 — DTW: forma completa vs mediana de referencia
+               (K_STD=2.0; bajar a 1.5 si persiste ruido)
 
   FEATURES (42 por muestra):
-  • Spline cúbica a N=20 → 19 Δx + 19 Δy + 4 globales
+  • Spline cubica a N=20 → 19 Δx + 19 Δy + 4 globales
+    (invariantes a traslacion)
 
-  INSTALACIÓN REQUERIDA:
-    pip install dtaidistance
-
-  USO:
-    python data_final.py
+  INSTALACION:   pip install dtaidistance
+  USO:           python data_final.py
 
   SALIDA:
   • dataset_gestos_final.csv   ← PRODUCTO PRINCIPAL
   • basura_detectada.csv       ← registro de eliminadas
-  • resultados_cv_final.csv    ← precisión por fold/clase
-  • graficas_final/            ← 11 imágenes (01-11)
+  • resultados_cv_final.csv    ← precision por fold/clase
+  • graficas_final/            ← 11 imagenes (01-11)
 =============================================================
 """
 
@@ -529,41 +525,69 @@ print("=" * 65)
 X = df_full[feat_cols].values
 y = df_full["gesture_label"].values
 
+# ── CAPA 1: separar 20% de validacion final (INTOCABLE) ──────────
 indices_all       = np.arange(len(df_full))
 idx_work, idx_val = train_test_split(
     indices_all, test_size=VAL_SIZE, random_state=RANDOM_STATE, stratify=y)
+
 X_work_arr = X[idx_work]; y_work_arr = y[idx_work]
 X_val      = X[idx_val];  y_val      = y[idx_val]
 
-print(f"  Total: {len(df_full)}  |  80% trabajo: {len(idx_work)}  |  20% val: {len(idx_val)}")
+# ── CAPA 2: del 80% de trabajo, dividir 80% train / 20% test ─────
+# (el 80% de trabajo se trata como si fuera el 100%)
+idx_sub = np.arange(len(idx_work))
+idx_tr_sub, idx_te_sub = train_test_split(
+    idx_sub, test_size=0.20, random_state=RANDOM_STATE, stratify=y_work_arr)
 
-skf         = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=RANDOM_STATE)
-fold_number = np.zeros(len(df_full), dtype=int)
-for fold, (tr_idx, te_idx) in enumerate(skf.split(X_work_arr, y_work_arr), 1):
-    fold_number[idx_work[te_idx]] = fold
+# indices globales en df_full
+idx_train = idx_work[idx_tr_sub]   # ~64% del total
+idx_test  = idx_work[idx_te_sub]   # ~16% del total
 
-df_full["fold"]  = fold_number
+X_train = X[idx_train]; y_train = y[idx_train]
+X_test  = X[idx_test];  y_test  = y[idx_test]
+
+print(f"  Total muestras limpias   : {len(df_full)}")
+print(f"  Validacion final (20%)   : {len(idx_val):>5}  <- INTOCABLE")
+print(f"  80% de trabajo           : {len(idx_work):>5}")
+print(f"    Train  (80% del 80%)   : {len(idx_train):>5}  (~{len(idx_train)/len(df_full)*100:.0f}% del total)")
+print(f"    Test   (20% del 80%)   : {len(idx_test):>5}  (~{len(idx_test)/len(df_full)*100:.0f}% del total)")
+
+# Asignar columna split en df_full (3 valores: train / test / validation)
 df_full["split"] = "validation"
-df_full.loc[df_full["fold"] > 0, "split"] = "test"
+df_full.loc[idx_train, "split"] = "train"
+df_full.loc[idx_test,  "split"] = "test"
+df_full["fold"] = 0   # solo se usa durante CV, no en el CSV final de splits
+
+print(f"\n  Distribucion de split por gesto:")
+for g in range(1, 9):
+    mask = df_full["gesture_label"] == g
+    tr = (df_full.loc[mask, "split"] == "train").sum()
+    te = (df_full.loc[mask, "split"] == "test").sum()
+    va = (df_full.loc[mask, "split"] == "validation").sum()
+    print(f"    G{g}: train={tr}  test={te}  val={va}")
 
 
 # ════════════════════════════════════════════════════════════════
-#  PASO 7 — CROSS VALIDATION
+#  PASO 7 — CROSS VALIDATION + EVALUACION TRAIN/TEST/VAL
 # ════════════════════════════════════════════════════════════════
 print("\n" + "=" * 65)
-print(f"PASO 7: Cross Validation Random Forest ({N_TREES} arboles)...")
+print(f"PASO 7: Cross Validation + Evaluacion ({N_TREES} arboles)...")
 print("=" * 65)
 
 gestos_list    = list(range(1, 9))
 resultados     = []
 fold_data_plot = []
 
-print(f"\n  {'Fold':<6} {'Total':>8}   " + "   ".join([f"G{g}" for g in gestos_list]))
+# ── CV sobre el conjunto de TRAIN (para verificar overfitting) ───
+skf = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=RANDOM_STATE)
+
+print(f"\n  Cross Validation sobre TRAIN ({len(idx_train)} muestras):")
+print(f"  {'Fold':<6} {'Total':>8}   " + "   ".join([f"G{g}" for g in gestos_list]))
 print("  " + "-" * 72)
 
-for fold, (tr_idx, te_idx) in enumerate(skf.split(X_work_arr, y_work_arr), 1):
-    X_tr = X_work_arr[tr_idx]; y_tr = y_work_arr[tr_idx]
-    X_te = X_work_arr[te_idx]; y_te = y_work_arr[te_idx]
+for fold, (tr_idx, te_idx) in enumerate(skf.split(X_train, y_train), 1):
+    X_tr = X_train[tr_idx]; y_tr = y_train[tr_idx]
+    X_te = X_train[te_idx]; y_te = y_train[te_idx]
     clf  = RandomForestClassifier(n_estimators=N_TREES, random_state=RANDOM_STATE, n_jobs=-1)
     clf.fit(X_tr, y_tr)
     y_pred    = clf.predict(X_te)
@@ -589,10 +613,24 @@ df_res    = pd.DataFrame(resultados)
 media_row = df_res[[f"acc_G{g}" for g in gestos_list] + ["acc_total"]].mean()
 
 print("  " + "-" * 72)
-print(f"  Media  {media_row['acc_total']*100:>6.1f}%   " +
+print(f"  Media CV  {media_row['acc_total']*100:>5.1f}%   " +
       "   ".join([f"{media_row[f'acc_G{g}']*100:>4.0f}%" for g in gestos_list]))
 
-print(f"\n  Entrenando modelo final (80% completo)...")
+# ── Modelo final: entrenar con TRAIN completo, evaluar en TEST ───
+print(f"\n  Entrenando modelo con TRAIN completo ({len(idx_train)} muestras)...")
+clf_train = RandomForestClassifier(n_estimators=N_TREES, random_state=RANDOM_STATE, n_jobs=-1)
+clf_train.fit(X_train, y_train)
+y_pred_test = clf_train.predict(X_test)
+acc_test    = accuracy_score(y_test, y_pred_test)
+acc_test_g  = {g: accuracy_score(y_test[y_test==g], y_pred_test[y_test==g])
+               if (y_test==g).sum() > 0 else 0.0 for g in gestos_list}
+
+print(f"\n  RESULTADO EN TEST ({len(idx_test)} muestras, 20% del 80%):")
+print(f"  Precision total : {acc_test*100:.1f}%")
+print(f"  Por gesto: " + "   ".join([f"G{g}:{acc_test_g[g]*100:.0f}%" for g in gestos_list]))
+
+# ── Evaluacion final: entrenar con TRAIN+TEST, evaluar en VAL ────
+print(f"\n  Entrenando modelo final con TRAIN+TEST ({len(idx_work)} muestras)...")
 clf_final = RandomForestClassifier(n_estimators=N_TREES, random_state=RANDOM_STATE, n_jobs=-1)
 clf_final.fit(X_work_arr, y_work_arr)
 y_pred_val = clf_final.predict(X_val)
@@ -601,11 +639,14 @@ acc_val_g  = {g: accuracy_score(y_val[y_val==g], y_pred_val[y_val==g])
               if (y_val==g).sum() > 0 else 0.0 for g in gestos_list}
 
 print(f"\n  {'='*65}")
-print(f"  PRUEBA FINAL — 20% validacion intocable")
+print(f"  PRUEBA FINAL — 20% validacion intocable ({len(idx_val)} muestras)")
 print(f"  Precision total : {acc_val*100:.1f}%")
 print(f"  Por gesto: " + "   ".join([f"G{g}:{acc_val_g[g]*100:.0f}%" for g in gestos_list]))
 print(f"  {'='*65}")
-print(f"\n  {'SUPERA el 90% minimo' if acc_val >= 0.90 else 'NO alcanza 90% — revisar K_STD'}")
+print(f"\n  CV media     : {media_row['acc_total']*100:.1f}%")
+print(f"  Test         : {acc_test*100:.1f}%")
+print(f"  Validacion   : {acc_val*100:.1f}%")
+print(f"  Req. > 90%   : {'CUMPLIDO' if acc_val >= 0.90 else 'NO alcanza — revisar K_STD'}")
 
 df_res.to_csv(RESULTS_CSV, index=False)
 print(f"  Resultados CV: {RESULTS_CSV}")
@@ -628,56 +669,86 @@ print("\n" + "=" * 65)
 print("PASO 9: Graficas de resultados...")
 print("=" * 65)
 
-# 07 - Estructura 3 capas
-fig, ax = plt.subplots(figsize=(14, 7))
-ax.set_xlim(0, 14); ax.set_ylim(0, 9); ax.axis("off")
-ax.set_title("Division de datos — 3 capas (limpieza DTW)", fontsize=12, fontweight="bold")
-ax.add_patch(mpatches.FancyBboxPatch((0.3,7.3),13.2,1.2,
+# 07 - Estructura correcta: 3 capas (pizarron de la maestra)
+fig, ax = plt.subplots(figsize=(15, 8))
+ax.set_xlim(0, 15); ax.set_ylim(0, 10); ax.axis("off")
+ax.set_title("Division de datos — estructura correcta (indicacion de la maestra)",
+             fontsize=12, fontweight="bold")
+
+# --- Nivel 1: Dataset completo ---
+ax.add_patch(mpatches.FancyBboxPatch((0.3,8.3),14.2,1.2,
     boxstyle="round,pad=0.1",facecolor="#DDDDDD",edgecolor="#555",linewidth=2))
-ax.text(7, 8.05, f"DATASET LIMPIO — {len(df_full)} muestras (100%)",
-    ha="center", fontweight="bold", fontsize=10)
-for xp in [3.5, 11]:
-    ax.annotate("", xy=(xp,7.1), xytext=(xp,7.3),
-        arrowprops=dict(arrowstyle="->", color="black", lw=1.5))
-ax.add_patch(mpatches.FancyBboxPatch((0.3,5.6),9.2,1.2,
+ax.text(7.4, 9.0, f"DATASET LIMPIO  —  {len(df_full)} muestras  (100%)",
+    ha="center", fontweight="bold", fontsize=11)
+
+# flechas nivel 1 → nivel 2
+for xp, lbl in [(4.5,"80%"), (12.0,"20%")]:
+    ax.annotate("", xy=(xp,7.9), xytext=(xp,8.3),
+        arrowprops=dict(arrowstyle="->", color="black", lw=1.8))
+ax.text(4.5, 7.65, "80%", ha="center", fontsize=9, color="#1F4E79", fontweight="bold")
+ax.text(12.0, 7.65, "20%", ha="center", fontsize=9, color="#900000", fontweight="bold")
+
+# --- Nivel 2: 80% trabajo | 20% validacion ---
+ax.add_patch(mpatches.FancyBboxPatch((0.3,6.3),8.5,1.2,
     boxstyle="round,pad=0.1",facecolor="#2E75B6",edgecolor="#1F4E79",linewidth=2,alpha=0.85))
-ax.text(4.9, 6.25, f"80% Trabajo — {len(idx_work)} muestras",
+ax.text(4.55, 6.95, f"80% de TRABAJO  —  {len(idx_work)} muestras",
     ha="center", color="white", fontweight="bold", fontsize=10)
-ax.add_patch(mpatches.FancyBboxPatch((9.7,5.6),3.7,1.2,
-    boxstyle="round,pad=0.1",facecolor="#C00000",edgecolor="#900000",linewidth=2,alpha=0.85))
-ax.text(11.55, 6.25, f"20% VALIDACION\n{len(idx_val)} muestras — INTOCABLE",
-    ha="center", color="white", fontweight="bold", fontsize=9)
-ax.annotate("", xy=(4.9,5.3), xytext=(4.9,5.6),
-    arrowprops=dict(arrowstyle="->", color="#1F4E79", lw=2))
-ax.text(4.9, 5.1, f"Cross Validation ({N_FOLDS} Folds estratificados)",
-    ha="center", fontweight="bold", fontsize=9.5, color="#1F4E79")
-fold_colors = ["#2980B9","#27AE60","#E67E22","#8E44AD","#16A085"]
-y_f = 4.5
-for i in range(N_FOLDS):
-    fc   = fold_colors[i]
-    n_tr = resultados[i]["n_train"]; n_te = resultados[i]["n_test"]
-    w_tr = 7.0 * n_tr / (n_tr + n_te); w_te = 7.0 - w_tr
-    ax.add_patch(mpatches.FancyBboxPatch((0.3,y_f),w_tr,0.5,
-        boxstyle="round,pad=0.04",facecolor=fc,alpha=0.3,edgecolor=fc,linewidth=1))
-    ax.add_patch(mpatches.FancyBboxPatch((0.3+w_tr,y_f),w_te,0.5,
-        boxstyle="round,pad=0.04",facecolor=fc,alpha=0.85,edgecolor=fc,linewidth=1))
-    ax.text(0.3+w_tr/2,      y_f+0.25, f"Train ({n_tr})",
-        ha="center", fontsize=7.5, color=fc, fontweight="bold")
-    ax.text(0.3+w_tr+w_te/2, y_f+0.25, f"Test ({n_te})",
-        ha="center", fontsize=7.5, color="white", fontweight="bold")
-    ax.text(0.0, y_f+0.25, f"F{i+1}", ha="center", fontsize=8.5, color=fc, fontweight="bold")
-    acc_f = resultados[i]["acc_total"]
-    ax.text(7.6, y_f+0.25, f"{acc_f*100:.1f}%", ha="left", fontsize=9,
-            color="#1a7a1a" if acc_f >= 0.90 else "#CC0000", fontweight="bold")
-    y_f -= 0.62
-ax.text(4.5, 1.5,
-    f"Promedio CV = {media_row['acc_total']*100:.1f}%  |  Validacion final = {acc_val*100:.1f}%",
-    ha="center", fontsize=9.5, color="#1a7a1a", fontweight="bold",
-    bbox=dict(boxstyle="round", facecolor="#D5E8D4", alpha=0.9))
-ax.annotate("", xy=(11.55,1.9), xytext=(11.55,5.6),
-    arrowprops=dict(arrowstyle="->", color="#C00000", lw=2.5, linestyle="dashed"))
-ax.text(11.55, 1.55, f"Final\n{acc_val*100:.1f}%\n(1 vez)",
-    ha="center", fontsize=8.5, color="#C00000", fontweight="bold")
+ax.text(4.55, 6.45, f"(se trata como el 100% para train/test)",
+    ha="center", color="#BDD7EE", fontsize=8.5)
+
+ax.add_patch(mpatches.FancyBboxPatch((9.2,6.3),5.3,1.2,
+    boxstyle="round,pad=0.1",facecolor="#C00000",edgecolor="#900000",linewidth=2,alpha=0.9))
+ax.text(11.85, 7.0, f"20% VALIDACION FINAL",
+    ha="center", color="white", fontweight="bold", fontsize=10)
+ax.text(11.85, 6.5, f"{len(idx_val)} muestras  —  INTOCABLE",
+    ha="center", color="#FFD0D0", fontsize=8.5)
+
+# flechas nivel 2 → nivel 3 (solo del 80%)
+for xp, lbl in [(2.5,"80% del 80%"), (6.8,"20% del 80%")]:
+    ax.annotate("", xy=(xp,5.9), xytext=(xp,6.3),
+        arrowprops=dict(arrowstyle="->", color="#1F4E79", lw=1.8))
+ax.text(2.5, 5.65, "80% del 80%", ha="center", fontsize=8.5, color="#1F4E79", fontweight="bold")
+ax.text(6.8, 5.65, "20% del 80%", ha="center", fontsize=8.5, color="#27AE60", fontweight="bold")
+
+# --- Nivel 3: TRAIN | TEST ---
+ax.add_patch(mpatches.FancyBboxPatch((0.3,4.3),4.7,1.2,
+    boxstyle="round,pad=0.1",facecolor="#1F4E79",edgecolor="#1F4E79",linewidth=2,alpha=0.9))
+ax.text(2.65, 5.0, f"TRAIN  —  {len(idx_train)} muestras",
+    ha="center", color="white", fontweight="bold", fontsize=10)
+ax.text(2.65, 4.5, f"(~{len(idx_train)/len(df_full)*100:.0f}% del total)",
+    ha="center", color="#BDD7EE", fontsize=8.5)
+
+ax.add_patch(mpatches.FancyBboxPatch((5.3,4.3),3.5,1.2,
+    boxstyle="round,pad=0.1",facecolor="#27AE60",edgecolor="#1E8449",linewidth=2,alpha=0.9))
+ax.text(7.05, 5.0, f"TEST  —  {len(idx_test)} muestras",
+    ha="center", color="white", fontweight="bold", fontsize=10)
+ax.text(7.05, 4.5, f"(~{len(idx_test)/len(df_full)*100:.0f}% del total)",
+    ha="center", color="#D5F5E3", fontsize=8.5)
+
+# flecha CV sobre TRAIN
+ax.annotate("", xy=(2.65,3.9), xytext=(2.65,4.3),
+    arrowprops=dict(arrowstyle="->", color="#1F4E79", lw=2, linestyle="dashed"))
+ax.text(2.65, 3.6, f"Cross Validation ({N_FOLDS} Folds)\npara verificar overfitting",
+    ha="center", fontsize=8.5, color="#1F4E79", fontweight="bold",
+    bbox=dict(boxstyle="round", facecolor="#D6EAF8", alpha=0.85))
+
+# flecha final: TRAIN+TEST → VAL
+ax.annotate("", xy=(11.85,5.0), xytext=(9.0,5.0),
+    arrowprops=dict(arrowstyle="->", color="#C00000", lw=2.5))
+ax.text(10.4, 5.2, "Modelo final\n(train+test)", ha="center", fontsize=8,
+    color="#C00000", fontweight="bold")
+
+# resumen de resultados al pie
+resultado_txt = (
+    f"CV media: {media_row['acc_total']*100:.1f}%   |   "
+    f"Test: {acc_test*100:.1f}%   |   "
+    f"Validacion final: {acc_val*100:.1f}%"
+)
+estado_col = "#1a7a1a" if acc_val >= 0.90 else "#CC0000"
+ax.text(7.4, 1.2, resultado_txt,
+    ha="center", fontsize=10, color=estado_col, fontweight="bold",
+    bbox=dict(boxstyle="round", facecolor="#D5E8D4" if acc_val>=0.90 else "#FFE0E0", alpha=0.9))
+
 plt.tight_layout()
 plt.savefig(GRAFICAS_DIR / "07_estructura_division_CV.png", dpi=120, bbox_inches="tight")
 plt.close()
