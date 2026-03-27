@@ -1,111 +1,111 @@
-user_id,gesture_id,sample_id,n_points,archivo,motivo
-2,1,27,11,users_01_to_10\user_02\gesture_01_sample_27.csv,R1-angulo: -31.2 vs ideal -135 (diff=103.8 > 70)
-6,1,5,7,users_01_to_10\user_06\gesture_01_sample_05.csv,R1-angulo: 111.5 vs ideal -135 (diff=113.5 > 70)
-10,1,10,19,users_01_to_10\user_10\gesture_01_sample_10.csv,R1-angulo: 139.9 vs ideal -135 (diff=85.1 > 70)
-10,1,11,13,users_01_to_10\user_10\gesture_01_sample_11.csv,R1-angulo: 146.8 vs ideal -135 (diff=78.2 > 70)
-1,1,7,15,users_01_to_10\user_01\gesture_01_sample_07.csv,R2-DTW: dist=2.0375 > umbral=0.9935
-4,1,26,9,users_01_to_10\user_04\gesture_01_sample_26.csv,R2-DTW: dist=1.0001 > umbral=0.9935
-5,1,6,7,users_01_to_10\user_05\gesture_01_sample_06.csv,R2-DTW: dist=1.0205 > umbral=0.9935
-5,1,15,9,users_01_to_10\user_05\gesture_01_sample_15.csv,R2-DTW: dist=1.2262 > umbral=0.9935
-7,1,3,24,users_01_to_10\user_07\gesture_01_sample_03.csv,R2-DTW: dist=2.3925 > umbral=0.9935
-7,1,15,9,users_01_to_10\user_07\gesture_01_sample_15.csv,R2-DTW: dist=1.1788 > umbral=0.9935
-8,1,20,11,users_01_to_10\user_08\gesture_01_sample_20.csv,R2-DTW: dist=1.1583 > umbral=0.9935
-8,1,21,15,users_01_to_10\user_08\gesture_01_sample_21.csv,R2-DTW: dist=1.5196 > umbral=0.9935
-9,1,9,8,users_01_to_10\user_09\gesture_01_sample_09.csv,R2-DTW: dist=2.7859 > umbral=0.9935
-10,1,9,10,users_01_to_10\user_10\gesture_01_sample_09.csv,R2-DTW: dist=1.2699 > umbral=0.9935
-10,1,12,12,users_01_to_10\user_10\gesture_01_sample_12.csv,R2-DTW: dist=1.5974 > umbral=0.9935
-4,2,1,12,users_01_to_10\user_04\gesture_02_sample_01.csv,R1-angulo: 95.0 vs ideal -45 (diff=140.0 > 70)
-4,2,7,11,users_01_to_10\user_04\gesture_02_sample_07.csv,R1-angulo: -179.7 vs ideal -45 (diff=134.7 > 70)
-4,2,31,10,users_01_to_10\user_04\gesture_02_sample_31.csv,R1-angulo: 91.6 vs ideal -45 (diff=136.6 > 70)
-10,2,21,16,users_01_to_10\user_10\gesture_02_sample_21.csv,R1-angulo: 108.4 vs ideal -45 (diff=153.4 > 70)
-10,2,22,11,users_01_to_10\user_10\gesture_02_sample_22.csv,R1-angulo: 115.1 vs ideal -45 (diff=160.1 > 70)
-10,2,23,18,users_01_to_10\user_10\gesture_02_sample_23.csv,R1-angulo: 92.7 vs ideal -45 (diff=137.7 > 70)
-10,2,24,18,users_01_to_10\user_10\gesture_02_sample_24.csv,R1-angulo: 105.2 vs ideal -45 (diff=150.2 > 70)
-6,2,26,5,users_01_to_10\user_06\gesture_02_sample_26.csv,R2-DTW: dist=1.5012 > umbral=1.0937
-7,2,14,21,users_01_to_10\user_07\gesture_02_sample_14.csv,R2-DTW: dist=2.4500 > umbral=1.0937
-8,2,6,13,users_01_to_10\user_08\gesture_02_sample_06.csv,R2-DTW: dist=1.5960 > umbral=1.0937
-10,2,2,11,users_01_to_10\user_10\gesture_02_sample_02.csv,R2-DTW: dist=1.2504 > umbral=1.0937
-10,2,4,15,users_01_to_10\user_10\gesture_02_sample_04.csv,R2-DTW: dist=1.2036 > umbral=1.0937
-10,2,6,18,users_01_to_10\user_10\gesture_02_sample_06.csv,R2-DTW: dist=1.5333 > umbral=1.0937
-10,2,11,13,users_01_to_10\user_10\gesture_02_sample_11.csv,R2-DTW: dist=1.9250 > umbral=1.0937
-10,2,18,27,users_01_to_10\user_10\gesture_02_sample_18.csv,R2-DTW: dist=2.3646 > umbral=1.0937
-10,2,19,21,users_01_to_10\user_10\gesture_02_sample_19.csv,R2-DTW: dist=4.0600 > umbral=1.0937
-6,3,12,6,users_01_to_10\user_06\gesture_03_sample_12.csv,R1-angulo: -84.2 vs ideal 135 (diff=140.8 > 70)
-6,3,13,5,users_01_to_10\user_06\gesture_03_sample_13.csv,R1-angulo: -76.5 vs ideal 135 (diff=148.5 > 70)
-9,3,12,8,users_01_to_10\user_09\gesture_03_sample_12.csv,R1-angulo: -69.2 vs ideal 135 (diff=155.8 > 70)
-9,3,13,8,users_01_to_10\user_09\gesture_03_sample_13.csv,R1-angulo: -32.7 vs ideal 135 (diff=167.7 > 70)
-1,3,1,8,users_01_to_10\user_01\gesture_03_sample_01.csv,R2-DTW: dist=2.0767 > umbral=1.3611
-3,3,14,12,users_01_to_10\user_03\gesture_03_sample_14.csv,R2-DTW: dist=1.8248 > umbral=1.3611
-3,3,15,14,users_01_to_10\user_03\gesture_03_sample_15.csv,R2-DTW: dist=2.2578 > umbral=1.3611
-3,3,20,11,users_01_to_10\user_03\gesture_03_sample_20.csv,R2-DTW: dist=1.3718 > umbral=1.3611
-4,3,9,12,users_01_to_10\user_04\gesture_03_sample_09.csv,R2-DTW: dist=1.5224 > umbral=1.3611
-4,3,11,18,users_01_to_10\user_04\gesture_03_sample_11.csv,R2-DTW: dist=1.7107 > umbral=1.3611
-5,3,4,8,users_01_to_10\user_05\gesture_03_sample_04.csv,R2-DTW: dist=3.3116 > umbral=1.3611
-6,3,11,13,users_01_to_10\user_06\gesture_03_sample_11.csv,R2-DTW: dist=3.4730 > umbral=1.3611
-6,3,23,12,users_01_to_10\user_06\gesture_03_sample_23.csv,R2-DTW: dist=2.3858 > umbral=1.3611
-8,3,29,15,users_01_to_10\user_08\gesture_03_sample_29.csv,R2-DTW: dist=1.3779 > umbral=1.3611
-8,3,30,16,users_01_to_10\user_08\gesture_03_sample_30.csv,R2-DTW: dist=1.4485 > umbral=1.3611
-9,3,1,10,users_01_to_10\user_09\gesture_03_sample_01.csv,R2-DTW: dist=1.9117 > umbral=1.3611
-10,3,3,15,users_01_to_10\user_10\gesture_03_sample_03.csv,R2-DTW: dist=1.7657 > umbral=1.3611
-10,3,14,11,users_01_to_10\user_10\gesture_03_sample_14.csv,R2-DTW: dist=3.8098 > umbral=1.3611
-6,4,2,6,users_01_to_10\user_06\gesture_04_sample_02.csv,R1-angulo: 142.3 vs ideal 45 (diff=97.3 > 70)
-6,4,5,13,users_01_to_10\user_06\gesture_04_sample_05.csv,R1-angulo: 164.0 vs ideal 45 (diff=119.0 > 70)
-6,4,6,4,users_01_to_10\user_06\gesture_04_sample_06.csv,R1-angulo: 139.2 vs ideal 45 (diff=94.2 > 70)
-10,4,4,11,users_01_to_10\user_10\gesture_04_sample_04.csv,R1-angulo: -41.9 vs ideal 45 (diff=86.9 > 70)
-4,4,25,21,users_01_to_10\user_04\gesture_04_sample_25.csv,R2-DTW: dist=4.3889 > umbral=1.7228
-6,4,3,9,users_01_to_10\user_06\gesture_04_sample_03.csv,R2-DTW: dist=4.0032 > umbral=1.7228
-6,4,27,9,users_01_to_10\user_06\gesture_04_sample_27.csv,R2-DTW: dist=2.8719 > umbral=1.7228
-8,4,2,11,users_01_to_10\user_08\gesture_04_sample_02.csv,R2-DTW: dist=3.1229 > umbral=1.7228
-9,4,2,23,users_01_to_10\user_09\gesture_04_sample_02.csv,R2-DTW: dist=2.6296 > umbral=1.7228
-9,4,12,31,users_01_to_10\user_09\gesture_04_sample_12.csv,R2-DTW: dist=3.3112 > umbral=1.7228
-9,4,13,16,users_01_to_10\user_09\gesture_04_sample_13.csv,R2-DTW: dist=3.2635 > umbral=1.7228
-9,4,14,15,users_01_to_10\user_09\gesture_04_sample_14.csv,R2-DTW: dist=3.6079 > umbral=1.7228
-10,4,23,16,users_01_to_10\user_10\gesture_04_sample_23.csv,R2-DTW: dist=4.4792 > umbral=1.7228
-10,4,27,13,users_01_to_10\user_10\gesture_04_sample_27.csv,R2-DTW: dist=2.6897 > umbral=1.7228
-4,5,3,15,users_01_to_10\user_04\gesture_05_sample_03.csv,R1-angulo: 106.5 vs ideal -90 (diff=163.5 > 70)
-6,5,2,21,users_01_to_10\user_06\gesture_05_sample_02.csv,R1-angulo: 74.2 vs ideal -90 (diff=164.2 > 70)
-6,5,25,5,users_01_to_10\user_06\gesture_05_sample_25.csv,R1-angulo: 98.5 vs ideal -90 (diff=171.5 > 70)
-9,5,15,12,users_01_to_10\user_09\gesture_05_sample_15.csv,R1-angulo: 84.3 vs ideal -90 (diff=174.3 > 70)
-1,5,1,15,users_01_to_10\user_01\gesture_05_sample_01.csv,R2-DTW: dist=2.7211 > umbral=1.1967
-1,5,14,23,users_01_to_10\user_01\gesture_05_sample_14.csv,R2-DTW: dist=2.8504 > umbral=1.1967
-3,5,11,16,users_01_to_10\user_03\gesture_05_sample_11.csv,R2-DTW: dist=1.9192 > umbral=1.1967
-5,5,4,7,users_01_to_10\user_05\gesture_05_sample_04.csv,R2-DTW: dist=1.5974 > umbral=1.1967
-5,5,9,6,users_01_to_10\user_05\gesture_05_sample_09.csv,R2-DTW: dist=1.5058 > umbral=1.1967
-6,5,4,9,users_01_to_10\user_06\gesture_05_sample_04.csv,R2-DTW: dist=4.3069 > umbral=1.1967
-6,5,18,7,users_01_to_10\user_06\gesture_05_sample_18.csv,R2-DTW: dist=2.0940 > umbral=1.1967
-7,5,14,23,users_01_to_10\user_07\gesture_05_sample_14.csv,R2-DTW: dist=2.4317 > umbral=1.1967
-8,5,24,14,users_01_to_10\user_08\gesture_05_sample_24.csv,R2-DTW: dist=1.6974 > umbral=1.1967
-10,5,4,15,users_01_to_10\user_10\gesture_05_sample_04.csv,R2-DTW: dist=1.6792 > umbral=1.1967
-5,6,18,9,users_01_to_10\user_05\gesture_06_sample_18.csv,R1-angulo: 104.5 vs ideal 180 (diff=75.5 > 70)
-5,6,19,8,users_01_to_10\user_05\gesture_06_sample_19.csv,R1-angulo: 108.4 vs ideal 180 (diff=71.6 > 70)
-2,6,1,26,users_01_to_10\user_02\gesture_06_sample_01.csv,R2-DTW: dist=2.7131 > umbral=1.3038
-3,6,5,14,users_01_to_10\user_03\gesture_06_sample_05.csv,R2-DTW: dist=2.0767 > umbral=1.3038
-4,6,11,42,users_01_to_10\user_04\gesture_06_sample_11.csv,R2-DTW: dist=2.6986 > umbral=1.3038
-7,6,1,326,users_01_to_10\user_07\gesture_06_sample_01.csv,R2-DTW: dist=3.9412 > umbral=1.3038
-8,6,8,13,users_01_to_10\user_08\gesture_06_sample_08.csv,R2-DTW: dist=2.7977 > umbral=1.3038
-8,6,16,17,users_01_to_10\user_08\gesture_06_sample_16.csv,R2-DTW: dist=1.7020 > umbral=1.3038
-8,6,22,12,users_01_to_10\user_08\gesture_06_sample_22.csv,R2-DTW: dist=2.9023 > umbral=1.3038
-5,7,6,6,users_01_to_10\user_05\gesture_07_sample_06.csv,R1-angulo: 79.3 vs ideal 0 (diff=79.3 > 70)
-6,7,9,5,users_01_to_10\user_06\gesture_07_sample_09.csv,R1-angulo: -93.5 vs ideal 0 (diff=93.5 > 70)
-6,7,10,7,users_01_to_10\user_06\gesture_07_sample_10.csv,R1-angulo: 72.7 vs ideal 0 (diff=72.7 > 70)
-10,7,18,12,users_01_to_10\user_10\gesture_07_sample_18.csv,R1-angulo: 92.6 vs ideal 0 (diff=92.6 > 70)
-10,7,19,13,users_01_to_10\user_10\gesture_07_sample_19.csv,R1-angulo: 85.4 vs ideal 0 (diff=85.4 > 70)
-1,7,1,7,users_01_to_10\user_01\gesture_07_sample_01.csv,R2-DTW: dist=1.5913 > umbral=1.0889
-1,7,17,8,users_01_to_10\user_01\gesture_07_sample_17.csv,R2-DTW: dist=1.3368 > umbral=1.0889
-4,7,23,36,users_01_to_10\user_04\gesture_07_sample_23.csv,R2-DTW: dist=2.4267 > umbral=1.0889
-4,7,28,5,users_01_to_10\user_04\gesture_07_sample_28.csv,R2-DTW: dist=1.1421 > umbral=1.0889
-6,7,24,4,users_01_to_10\user_06\gesture_07_sample_24.csv,R2-DTW: dist=1.1796 > umbral=1.0889
-8,7,21,13,users_01_to_10\user_08\gesture_07_sample_21.csv,R2-DTW: dist=1.7359 > umbral=1.0889
-9,7,1,18,users_01_to_10\user_09\gesture_07_sample_01.csv,R2-DTW: dist=1.7669 > umbral=1.0889
-9,7,5,12,users_01_to_10\user_09\gesture_07_sample_05.csv,R2-DTW: dist=1.6809 > umbral=1.0889
-10,7,17,13,users_01_to_10\user_10\gesture_07_sample_17.csv,R2-DTW: dist=4.0034 > umbral=1.0889
-3,8,13,15,users_01_to_10\user_03\gesture_08_sample_13.csv,R1-angulo: 161.4 vs ideal 90 (diff=71.4 > 70)
-10,8,2,13,users_01_to_10\user_10\gesture_08_sample_02.csv,R1-angulo: 9.2 vs ideal 90 (diff=80.8 > 70)
-10,8,12,12,users_01_to_10\user_10\gesture_08_sample_12.csv,R1-angulo: -63.5 vs ideal 90 (diff=153.5 > 70)
-10,8,19,15,users_01_to_10\user_10\gesture_08_sample_19.csv,R1-angulo: 14.6 vs ideal 90 (diff=75.4 > 70)
-1,8,1,13,users_01_to_10\user_01\gesture_08_sample_01.csv,R2-DTW: dist=2.5523 > umbral=1.1258
-1,8,12,20,users_01_to_10\user_01\gesture_08_sample_12.csv,R2-DTW: dist=2.6220 > umbral=1.1258
-1,8,17,11,users_01_to_10\user_01\gesture_08_sample_17.csv,R2-DTW: dist=2.0734 > umbral=1.1258
-2,8,6,10,users_01_to_10\user_02\gesture_08_sample_06.csv,R2-DTW: dist=2.6860 > umbral=1.1258
-7,8,9,14,users_01_to_10\user_07\gesture_08_sample_09.csv,R2-DTW: dist=3.1027 > umbral=1.1258
-7,8,14,15,users_01_to_10\user_07\gesture_08_sample_14.csv,R2-DTW: dist=2.9480 > umbral=1.1258
+user_id,gesture_id,sample_id,motivo
+2,1,27,R1: -31.2° vs ideal -135° (diff=103.8°)
+6,1,5,R1: 111.5° vs ideal -135° (diff=113.5°)
+10,1,10,R1: 139.9° vs ideal -135° (diff=85.1°)
+10,1,11,R1: 146.8° vs ideal -135° (diff=78.2°)
+1,1,7,R2: DTW=2.0375 > 0.9935
+4,1,26,R2: DTW=1.0001 > 0.9935
+5,1,6,R2: DTW=1.0205 > 0.9935
+5,1,15,R2: DTW=1.2262 > 0.9935
+7,1,3,R2: DTW=2.3925 > 0.9935
+7,1,15,R2: DTW=1.1788 > 0.9935
+8,1,20,R2: DTW=1.1583 > 0.9935
+8,1,21,R2: DTW=1.5196 > 0.9935
+9,1,9,R2: DTW=2.7859 > 0.9935
+10,1,9,R2: DTW=1.2699 > 0.9935
+10,1,12,R2: DTW=1.5974 > 0.9935
+4,2,1,R1: 95.0° vs ideal -45° (diff=140.0°)
+4,2,7,R1: -179.7° vs ideal -45° (diff=134.7°)
+4,2,31,R1: 91.6° vs ideal -45° (diff=136.6°)
+10,2,21,R1: 108.4° vs ideal -45° (diff=153.4°)
+10,2,22,R1: 115.1° vs ideal -45° (diff=160.1°)
+10,2,23,R1: 92.7° vs ideal -45° (diff=137.7°)
+10,2,24,R1: 105.2° vs ideal -45° (diff=150.2°)
+6,2,26,R2: DTW=1.5012 > 1.0937
+7,2,14,R2: DTW=2.4500 > 1.0937
+8,2,6,R2: DTW=1.5960 > 1.0937
+10,2,2,R2: DTW=1.2504 > 1.0937
+10,2,4,R2: DTW=1.2036 > 1.0937
+10,2,6,R2: DTW=1.5333 > 1.0937
+10,2,11,R2: DTW=1.9250 > 1.0937
+10,2,18,R2: DTW=2.3646 > 1.0937
+10,2,19,R2: DTW=4.0600 > 1.0937
+6,3,12,R1: -84.2° vs ideal 135° (diff=140.8°)
+6,3,13,R1: -76.5° vs ideal 135° (diff=148.5°)
+9,3,12,R1: -69.2° vs ideal 135° (diff=155.8°)
+9,3,13,R1: -32.7° vs ideal 135° (diff=167.7°)
+1,3,1,R2: DTW=2.0767 > 1.3611
+3,3,14,R2: DTW=1.8248 > 1.3611
+3,3,15,R2: DTW=2.2578 > 1.3611
+3,3,20,R2: DTW=1.3718 > 1.3611
+4,3,9,R2: DTW=1.5224 > 1.3611
+4,3,11,R2: DTW=1.7107 > 1.3611
+5,3,4,R2: DTW=3.3116 > 1.3611
+6,3,11,R2: DTW=3.4730 > 1.3611
+6,3,23,R2: DTW=2.3858 > 1.3611
+8,3,29,R2: DTW=1.3779 > 1.3611
+8,3,30,R2: DTW=1.4485 > 1.3611
+9,3,1,R2: DTW=1.9117 > 1.3611
+10,3,3,R2: DTW=1.7657 > 1.3611
+10,3,14,R2: DTW=3.8098 > 1.3611
+6,4,2,R1: 142.3° vs ideal 45° (diff=97.3°)
+6,4,5,R1: 164.0° vs ideal 45° (diff=119.0°)
+6,4,6,R1: 139.2° vs ideal 45° (diff=94.2°)
+10,4,4,R1: -41.9° vs ideal 45° (diff=86.9°)
+4,4,25,R2: DTW=4.3889 > 1.7228
+6,4,3,R2: DTW=4.0032 > 1.7228
+6,4,27,R2: DTW=2.8719 > 1.7228
+8,4,2,R2: DTW=3.1229 > 1.7228
+9,4,2,R2: DTW=2.6296 > 1.7228
+9,4,12,R2: DTW=3.3112 > 1.7228
+9,4,13,R2: DTW=3.2635 > 1.7228
+9,4,14,R2: DTW=3.6079 > 1.7228
+10,4,23,R2: DTW=4.4792 > 1.7228
+10,4,27,R2: DTW=2.6897 > 1.7228
+4,5,3,R1: 106.5° vs ideal -90° (diff=163.5°)
+6,5,2,R1: 74.2° vs ideal -90° (diff=164.2°)
+6,5,25,R1: 98.5° vs ideal -90° (diff=171.5°)
+9,5,15,R1: 84.3° vs ideal -90° (diff=174.3°)
+1,5,1,R2: DTW=2.7211 > 1.1967
+1,5,14,R2: DTW=2.8504 > 1.1967
+3,5,11,R2: DTW=1.9192 > 1.1967
+5,5,4,R2: DTW=1.5974 > 1.1967
+5,5,9,R2: DTW=1.5058 > 1.1967
+6,5,4,R2: DTW=4.3069 > 1.1967
+6,5,18,R2: DTW=2.0940 > 1.1967
+7,5,14,R2: DTW=2.4317 > 1.1967
+8,5,24,R2: DTW=1.6974 > 1.1967
+10,5,4,R2: DTW=1.6792 > 1.1967
+5,6,18,R1: 104.5° vs ideal 180° (diff=75.5°)
+5,6,19,R1: 108.4° vs ideal 180° (diff=71.6°)
+2,6,1,R2: DTW=2.7131 > 1.3038
+3,6,5,R2: DTW=2.0767 > 1.3038
+4,6,11,R2: DTW=2.6986 > 1.3038
+7,6,1,R2: DTW=3.9412 > 1.3038
+8,6,8,R2: DTW=2.7977 > 1.3038
+8,6,16,R2: DTW=1.7020 > 1.3038
+8,6,22,R2: DTW=2.9023 > 1.3038
+5,7,6,R1: 79.3° vs ideal 0° (diff=79.3°)
+6,7,9,R1: -93.5° vs ideal 0° (diff=93.5°)
+6,7,10,R1: 72.7° vs ideal 0° (diff=72.7°)
+10,7,18,R1: 92.6° vs ideal 0° (diff=92.6°)
+10,7,19,R1: 85.4° vs ideal 0° (diff=85.4°)
+1,7,1,R2: DTW=1.5913 > 1.0889
+1,7,17,R2: DTW=1.3368 > 1.0889
+4,7,23,R2: DTW=2.4267 > 1.0889
+4,7,28,R2: DTW=1.1421 > 1.0889
+6,7,24,R2: DTW=1.1796 > 1.0889
+8,7,21,R2: DTW=1.7359 > 1.0889
+9,7,1,R2: DTW=1.7669 > 1.0889
+9,7,5,R2: DTW=1.6809 > 1.0889
+10,7,17,R2: DTW=4.0034 > 1.0889
+3,8,13,R1: 161.4° vs ideal 90° (diff=71.4°)
+10,8,2,R1: 9.2° vs ideal 90° (diff=80.8°)
+10,8,12,R1: -63.5° vs ideal 90° (diff=153.5°)
+10,8,19,R1: 14.6° vs ideal 90° (diff=75.4°)
+1,8,1,R2: DTW=2.5523 > 1.1258
+1,8,12,R2: DTW=2.6220 > 1.1258
+1,8,17,R2: DTW=2.0734 > 1.1258
+2,8,6,R2: DTW=2.6860 > 1.1258
+7,8,9,R2: DTW=3.1027 > 1.1258
+7,8,14,R2: DTW=2.9480 > 1.1258

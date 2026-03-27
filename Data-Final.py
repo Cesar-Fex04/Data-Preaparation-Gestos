@@ -1,43 +1,36 @@
 """
-=============================================================
-  DATA PREPARATION - RECONOCIMIENTO DE GESTOS EN TABLETA
-  Inteligencia Artificial  —  Script FINAL (limpieza DTW)
-=============================================================
-  DIVISION DE DATOS (3 capas — indicacion de la maestra):
-  ┌─────────────────────────────────────────────────────┐
-  │  DATASET LIMPIO  (100%)                             │
-  │  ├── 20% VALIDACION FINAL  ← separar PRIMERO,      │
-  │  │                            no tocar hasta el fin │
-  │  └── 80% de TRABAJO  (tratado como 100%)            │
-  │       ├── 80% del 80% = TRAIN                       │
-  │       └── 20% del 80% = TEST                        │
-  │                                                     │
-  │  Cross Validation (5-Fold) sobre TRAIN              │
-  │  → verifica que no haya overfitting                 │
-  │  Evaluacion en TEST → resultado intermedio          │
-  │  Evaluacion en VALIDACION → resultado final         │
-  └─────────────────────────────────────────────────────┘
+DATA PREPARATION — Reconocimiento de Gestos en Tableta 2D
+Inteligencia Artificial
 
-  Columna "split" en el CSV: "train" | "test" | "validation"
+PIPELINE:
+  1. Carga archivos CSV de users_01_to_10/
+  2. Detecta duplicados
+  3. Limpieza DTW en 2 rondas (elimina basura por joyeria u otros objetos)
+     R1: angulo global fuera del rango esperado del gesto
+     R2: distancia DTW vs mediana de referencia (> media + K_STD*std)
+  4. Extrae 42 features por muestra:
+       19 dx + 19 dy (deltas spline, invariantes a traslacion)
+       + dx_global + dy_global + angle + total_length
+  5. Division: 20% validacion intocable, 80% trabajo
+                del 80%: 80% train / 20% test
+  6. Cross Validation 5-fold sobre TRAIN (Random Forest de validacion)
+  7. Guarda dataset_gestos_final.csv (PRODUCTO PRINCIPAL)
 
-  LIMPIEZA DE BASURA (2 rondas DTW):
-  • Ronda 1 — angulo global fuera del rango esperado
-  • Ronda 2 — DTW: forma completa vs mediana de referencia
-               (K_STD=2.0; bajar a 1.5 si persiste ruido)
+NOTA sobre coordenadas de tableta:
+  Y positivo apunta hacia ABAJO (convencion de pantalla).
+  Por eso gesto arriba tiene dy negativo, y abajo tiene dy positivo.
 
-  FEATURES (42 por muestra):
-  • Spline cubica a N=20 → 19 Δx + 19 Δy + 4 globales
-    (invariantes a traslacion)
+  Gestos y sus angulos arctan2(dy, dx):
+    G1 ↖  Diagonal arriba-izquierda  ~ -135 grados
+    G2 ↗  Diagonal arriba-derecha    ~  -45 grados
+    G3 ↙  Diagonal abajo-izquierda   ~  135 grados
+    G4 ↘  Diagonal abajo-derecha     ~   45 grados
+    G5 ↑  Vertical arriba            ~  -90 grados
+    G6 ←  Horizontal izquierda       ~  180 grados
+    G7 →  Horizontal derecha         ~    0 grados
+    G8 ↓  Vertical abajo             ~   90 grados
 
-  INSTALACION:   pip install dtaidistance
-  USO:           python data_final.py
-
-  SALIDA:
-  • dataset_gestos_final.csv   ← PRODUCTO PRINCIPAL
-  • basura_detectada.csv       ← registro de eliminadas
-  • resultados_cv_final.csv    ← precision por fold/clase
-  • graficas_final/            ← 11 imagenes (01-11)
-=============================================================
+USO: python data_final.py
 """
 
 import pandas as pd
@@ -60,905 +53,508 @@ try:
     DTW_AVAILABLE = True
 except ImportError:
     DTW_AVAILABLE = False
-    print("  [AVISO] dtaidistance no encontrado.")
-    print("          Instala con: pip install dtaidistance")
-    print("          Se usara distancia euclidiana como fallback.\n")
+    print("[AVISO] dtaidistance no encontrado. pip install dtaidistance")
 
-# ─── CONFIGURACIÓN ────────────────────────────────────────────────
+# ─── CONFIGURACION ────────────────────────────────────────────────
 DATA_DIR     = Path("users_01_to_10")
 OUTPUT_CSV   = "dataset_gestos_final.csv"
 BASURA_CSV   = "basura_detectada.csv"
 RESULTS_CSV  = "resultados_cv_final.csv"
 GRAFICAS_DIR = Path("graficas_final")
-N_RESAMPLE   = 20       # puntos spline para features
-N_DTW        = 50       # puntos para comparacion DTW
+N_RESAMPLE   = 20
+N_DTW        = 50
 N_FOLDS      = 5
 VAL_SIZE     = 0.20
 RANDOM_STATE = 42
 N_TREES      = 100
-
-# Ronda 1: tolerancia de angulo global (grados) - amplia, solo descarta obvios
 ANGULO_TOLERANCIA_DEG = 70
+K_STD        = 2.0
 
-# Ronda 2: cuantas desviaciones estandar se permite sobre la media DTW
-# 2.0 = conservador (solo outliers claros)
-# 1.5 = mas agresivo (si aun queda ruido, bajar a 1.5)
-K_STD = 2.0
-
-# Angulo esperado por gesto (grados, arctan2(dy, dx))
-GESTO_ANGULO_IDEAL = {
-    1: -135,   # Diagonal NW
-    2:  -45,   # Diagonal NE
-    3:  135,   # Diagonal SW
-    4:   45,   # Diagonal SE
-    5:  -90,   # Vertical arriba
-    6:  180,   # Horizontal izquierda
-    7:    0,   # Horizontal derecha
-    8:   90,   # Vertical abajo
+# Angulos esperados segun coordenadas de tableta (Y positivo = abajo)
+ANGULO_IDEAL = {
+    1: -135,  # ↖ arriba-izquierda
+    2:  -45,  # ↗ arriba-derecha
+    3:  135,  # ↙ abajo-izquierda
+    4:   45,  # ↘ abajo-derecha
+    5:  -90,  # ↑ vertical arriba
+    6:  180,  # ← horizontal izquierda
+    7:    0,  # → horizontal derecha
+    8:   90,  # ↓ vertical abajo
 }
 
-DIRECCIONES = {
-    1: "Diagonal NW", 2: "Diagonal NE",
-    3: "Diagonal SW", 4: "Diagonal SE",
-    5: "Vertical U",  6: "Horizontal L",
-    7: "Horizontal R", 8: "Vertical D"
+# Nombres con flechas consistentes con el sistema de coordenadas
+NOMBRE = {
+    1: "Diagonal ↖",   2: "Diagonal ↗",
+    3: "Diagonal ↙",   4: "Diagonal ↘",
+    5: "Vertical ↑",   6: "Horizontal ←",
+    7: "Horizontal →", 8: "Vertical ↓"
 }
 
 GRAFICAS_DIR.mkdir(exist_ok=True)
 
 
-# ════════════════════════════════════════════════════════════════
-#  UTILIDADES DTW
-# ════════════════════════════════════════════════════════════════
+# ── utilidades DTW ─────────────────────────────────────────────────
+def resample_traj(x, y, n=N_DTW):
+    t = np.linspace(0, 1, len(x))
+    tn = np.linspace(0, 1, n)
+    return np.column_stack([interp1d(t, x)(tn), interp1d(t, y)(tn)])
 
-def resample_traj(x, y, n_points=N_DTW):
-    t     = np.linspace(0, 1, len(x))
-    t_new = np.linspace(0, 1, n_points)
-    fx    = interp1d(t, x, kind="linear")
-    fy    = interp1d(t, y, kind="linear")
-    return np.column_stack([fx(t_new), fy(t_new)])
+def normalize_traj(tr):
+    tr = tr - tr[0]
+    L = np.sum(np.linalg.norm(np.diff(tr, axis=0), axis=1))
+    return tr / L if L > 1e-9 else tr
 
-def normalize_traj(traj):
-    """Centra en origen y escala por longitud total."""
-    traj = traj - traj[0]
-    total_len = np.sum(np.linalg.norm(np.diff(traj, axis=0), axis=1))
-    if total_len > 1e-9:
-        traj = traj / total_len
-    return traj
-
-def dtw_distance_2d(a, b):
+def dtw_dist(a, b):
     if DTW_AVAILABLE:
-        dx = dtw_lib.distance(a[:, 0].astype(np.float64),
-                              b[:, 0].astype(np.float64))
-        dy = dtw_lib.distance(a[:, 1].astype(np.float64),
-                              b[:, 1].astype(np.float64))
-        return float(np.sqrt(dx**2 + dy**2))
-    else:
-        # fallback euclidiano punto a punto
-        return float(np.sqrt(np.sum((a - b)**2)))
+        return float(np.sqrt(
+            dtw_lib.distance(a[:,0].astype(np.float64), b[:,0].astype(np.float64))**2 +
+            dtw_lib.distance(a[:,1].astype(np.float64), b[:,1].astype(np.float64))**2))
+    return float(np.sqrt(np.sum((a-b)**2)))
 
-def compute_reference(trajs_norm):
-    """Mediana punto a punto - robusta ante outliers residuales."""
-    stacked = np.stack(trajs_norm, axis=0)
-    return np.median(stacked, axis=0)
-
-def angulo_diff(a_deg, b_deg):
-    d = (a_deg - b_deg + 180) % 360 - 180
-    return abs(d)
+def ang_diff(a, b):
+    return abs((a - b + 180) % 360 - 180)
 
 
 # ════════════════════════════════════════════════════════════════
-#  PASO 1 — CARGA DE DATOS
+#  PASO 1 — CARGA
 # ════════════════════════════════════════════════════════════════
-print("=" * 65)
+print("=" * 60)
 print("PASO 1: Cargando archivos...")
-print("=" * 65)
+print("=" * 60)
 
-records_raw = []
-for user_dir in sorted(DATA_DIR.iterdir()):
-    if not user_dir.is_dir():
-        continue
-    user_id = int(user_dir.name.split("_")[1])
-    for csv_file in sorted(user_dir.glob("*.csv")):
-        parts      = csv_file.stem.split("_")
-        gesture_id = int(parts[1])
-        sample_id  = int(parts[3])
-        df         = pd.read_csv(csv_file)
-        records_raw.append({
-            "user_id"   : user_id,
-            "gesture_id": gesture_id,
-            "sample_id" : sample_id,
-            "file"      : str(csv_file),
-            "n_points"  : len(df),
-            "df"        : df
-        })
+records = []
+for udir in sorted(DATA_DIR.iterdir()):
+    if not udir.is_dir(): continue
+    uid = int(udir.name.split("_")[1])
+    for f in sorted(udir.glob("*.csv")):
+        parts = f.stem.split("_")
+        df = pd.read_csv(f)
+        records.append({"user_id": uid, "gesture_id": int(parts[1]),
+                        "sample_id": int(parts[3]), "file": str(f),
+                        "n_points": len(df), "df": df})
 
-print(f"  Total archivos: {len(records_raw)}")
-df_inv = pd.DataFrame([{k: v for k, v in r.items() if k != "df"}
-                        for r in records_raw])
-pivot = df_inv.pivot_table(
-    index="user_id", columns="gesture_id",
-    values="sample_id", aggfunc="count", fill_value=0)
+print(f"  {len(records)} archivos cargados")
+
+df_inv = pd.DataFrame([{k:v for k,v in r.items() if k!="df"} for r in records])
+pivot  = df_inv.pivot_table(index="user_id", columns="gesture_id",
+                             values="sample_id", aggfunc="count", fill_value=0)
 pivot.columns = [f"G{c}" for c in pivot.columns]
-print("\n  Muestras por usuario/gesto (original):")
+print("\n  Muestras por usuario/gesto:")
 print(pivot.to_string())
 
 
 # ════════════════════════════════════════════════════════════════
 #  PASO 2 — LONGITUDES
 # ════════════════════════════════════════════════════════════════
-print("\n" + "=" * 65)
-print("PASO 2: Longitudes...")
-print("=" * 65)
-len_stats = df_inv.groupby("gesture_id")["n_points"].agg(["min","max","mean"]).round(1)
-len_stats.index = [f"G{i}" for i in len_stats.index]
-print(len_stats.to_string())
-promedio_global = df_inv["n_points"].mean()
-print(f"\n  Promedio global: {promedio_global:.1f} pts  |  N_RESAMPLE={N_RESAMPLE}  |  N_DTW={N_DTW}")
+print("\n" + "=" * 60)
+print("PASO 2: Analisis de longitudes...")
+print("=" * 60)
+prom = df_inv["n_points"].mean()
+print(df_inv.groupby("gesture_id")["n_points"].agg(["min","max","mean"]).round(1).to_string())
+print(f"\n  Promedio: {prom:.1f} pts | N_RESAMPLE={N_RESAMPLE} | N_DTW={N_DTW}")
 
 
 # ════════════════════════════════════════════════════════════════
 #  PASO 3 — DUPLICADOS
 # ════════════════════════════════════════════════════════════════
-print("\n" + "=" * 65)
+print("\n" + "=" * 60)
 print("PASO 3: Duplicados...")
-print("=" * 65)
-seen_hashes = {}
-indices_dup = set()
-for i, r in enumerate(records_raw):
-    key = tuple(r["df"]["x"].round(4).tolist()) + tuple(r["df"]["y"].round(4).tolist())
-    h   = hash(key)
-    if h in seen_hashes:
-        indices_dup.add(i)
-    else:
-        seen_hashes[h] = i
-print(f"  Duplicados: {len(indices_dup)}")
+print("=" * 60)
+seen, dup = {}, set()
+for i, r in enumerate(records):
+    k = hash(tuple(r["df"]["x"].round(4)) + tuple(r["df"]["y"].round(4)))
+    if k in seen: dup.add(i)
+    else: seen[k] = i
+print(f"  Duplicados: {len(dup)}")
 
 
 # ════════════════════════════════════════════════════════════════
-#  PASO 3.5 — DETECCION DE BASURA (DTW 2 rondas)
+#  PASO 3.5 — LIMPIEZA DTW
 # ════════════════════════════════════════════════════════════════
-print("\n" + "=" * 65)
-print("PASO 3.5: Limpieza con DTW (2 rondas)...")
-print("=" * 65)
+print("\n" + "=" * 60)
+print("PASO 3.5: Limpieza DTW (2 rondas)...")
+print("=" * 60)
 
-indices_basura = {}
-basura_rows    = []
-
+basura, basura_rows = {}, []
 por_gesto = defaultdict(list)
-for i, r in enumerate(records_raw):
-    if i in indices_dup or r["n_points"] < 3:
-        continue
-    por_gesto[r["gesture_id"]].append(i)
+for i, r in enumerate(records):
+    if i not in dup and r["n_points"] >= 3:
+        por_gesto[r["gesture_id"]].append(i)
 
 for gid in range(1, 9):
-    indices_g = por_gesto[gid]
-    ideal     = GESTO_ANGULO_IDEAL[gid]
-    print(f"\n  G{gid} ({DIRECCIONES[gid]}) — {len(indices_g)} muestras candidatas")
+    idxs  = por_gesto[gid]
+    ideal = ANGULO_IDEAL[gid]
+    print(f"\n  G{gid} {NOMBRE[gid]} — {len(idxs)} candidatas")
 
-    # --- RONDA 1: angulo global ---
-    candidatos_r2 = []
-    for i in indices_g:
-        r    = records_raw[i]
-        x    = r["df"]["x"].values.astype(float)
-        y    = r["df"]["y"].values.astype(float)
-        dx_g = float(x[-1] - x[0])
-        dy_g = float(y[-1] - y[0])
-        ang  = float(np.degrees(np.arctan2(dy_g, dx_g)))
-        diff = angulo_diff(ang, ideal)
-        if gid == 6:
-            diff = min(diff, angulo_diff(ang, -180))
-        if diff > ANGULO_TOLERANCIA_DEG:
-            motivo = (f"R1-angulo: {ang:.1f} vs ideal {ideal} "
-                      f"(diff={diff:.1f} > {ANGULO_TOLERANCIA_DEG})")
-            indices_basura[i] = motivo
+    # Ronda 1: angulo global
+    r2 = []
+    for i in idxs:
+        r  = records[i]
+        x, y = r["df"]["x"].values.astype(float), r["df"]["y"].values.astype(float)
+        ang  = float(np.degrees(np.arctan2(y[-1]-y[0], x[-1]-x[0])))
+        d    = ang_diff(ang, ideal)
+        if gid == 6: d = min(d, ang_diff(ang, -180))
+        if d > ANGULO_TOLERANCIA_DEG:
+            basura[i] = f"R1: {ang:.1f}° vs ideal {ideal}° (diff={d:.1f}°)"
         else:
-            candidatos_r2.append(i)
+            r2.append(i)
+    print(f"    R1: -{len(idxs)-len(r2)} eliminadas, {len(r2)} pasan")
 
-    r1_elim = len(indices_g) - len(candidatos_r2)
-    print(f"    R1 angulo:  -{r1_elim} eliminadas, {len(candidatos_r2)} pasan a R2")
-
-    if len(candidatos_r2) < 3:
-        print(f"    [!] Muy pocas muestras, omitiendo R2")
+    if len(r2) < 3:
+        print(f"    R2: omitida (pocas muestras)")
         continue
 
-    # --- RONDA 2: DTW forma completa ---
-    trajs_norm = []
-    for i in candidatos_r2:
-        r  = records_raw[i]
-        x  = r["df"]["x"].values.astype(float)
-        y  = r["df"]["y"].values.astype(float)
-        tr = resample_traj(x, y, N_DTW)
-        tr = normalize_traj(tr)
-        trajs_norm.append(tr)
-
-    referencia = compute_reference(trajs_norm)
-    distancias = np.array([dtw_distance_2d(tr, referencia) for tr in trajs_norm])
-
-    media_d = distancias.mean()
-    std_d   = distancias.std()
-    umbral  = media_d + K_STD * std_d
-    print(f"    R2 DTW:     media={media_d:.4f}  std={std_d:.4f}  "
-          f"umbral={umbral:.4f}  (K_STD={K_STD})")
-
+    # Ronda 2: DTW
+    trajs = [normalize_traj(resample_traj(
+        records[i]["df"]["x"].values.astype(float),
+        records[i]["df"]["y"].values.astype(float))) for i in r2]
+    ref   = np.median(np.stack(trajs), axis=0)
+    dists = np.array([dtw_dist(t, ref) for t in trajs])
+    umbral = dists.mean() + K_STD * dists.std()
+    print(f"    R2: media={dists.mean():.4f} std={dists.std():.4f} umbral={umbral:.4f}")
     r2_elim = 0
-    for i, dist in zip(candidatos_r2, distancias):
-        if dist > umbral:
-            motivo = (f"R2-DTW: dist={dist:.4f} > umbral={umbral:.4f}")
-            indices_basura[i] = motivo
+    for i, d in zip(r2, dists):
+        if d > umbral:
+            basura[i] = f"R2: DTW={d:.4f} > {umbral:.4f}"
             r2_elim += 1
+    print(f"    R2: -{r2_elim} eliminadas")
 
-    print(f"    R2 DTW:     -{r2_elim} eliminadas, "
-          f"{len(candidatos_r2)-r2_elim} validas")
+for idx, mot in basura.items():
+    r = records[idx]
+    basura_rows.append({"user_id":r["user_id"], "gesture_id":r["gesture_id"],
+                        "sample_id":r["sample_id"], "motivo":mot})
+pd.DataFrame(basura_rows).to_csv(BASURA_CSV, index=False)
 
-# Consolidar
-for idx, motivo in indices_basura.items():
-    r = records_raw[idx]
-    basura_rows.append({
-        "user_id"   : r["user_id"],
-        "gesture_id": r["gesture_id"],
-        "sample_id" : r["sample_id"],
-        "n_points"  : r["n_points"],
-        "archivo"   : r["file"],
-        "motivo"    : motivo
-    })
-
-df_basura = pd.DataFrame(basura_rows)
-df_basura.to_csv(BASURA_CSV, index=False)
-
-total_dup  = len(indices_dup)
-total_bsra = len(indices_basura)
-r1_total   = sum(1 for m in basura_rows if "R1" in m["motivo"])
-r2_total   = sum(1 for m in basura_rows if "R2" in m["motivo"])
-
-print(f"\n  {'─'*50}")
-print(f"  Duplicados             : {total_dup}")
-print(f"  Basura R1 (angulo)     : {r1_total}")
-print(f"  Basura R2 (DTW)        : {r2_total}")
-print(f"  Total eliminadas       : {total_dup + total_bsra}")
-print(f"  Muestras validas       : {len(records_raw) - total_dup - total_bsra}")
-print(f"  Registro: {BASURA_CSV}")
+excluir = dup | set(basura.keys())
+r1t = sum(1 for m in basura_rows if "R1" in m["motivo"])
+r2t = sum(1 for m in basura_rows if "R2" in m["motivo"])
+print(f"\n  Duplicados: {len(dup)} | Basura R1: {r1t} | Basura R2: {r2t}")
+print(f"  Total eliminadas: {len(excluir)} | Validas: {len(records)-len(excluir)}")
 
 
 # ════════════════════════════════════════════════════════════════
 #  PASO 4 — VISUALIZACIONES
 # ════════════════════════════════════════════════════════════════
-print("\n" + "=" * 65)
+print("\n" + "=" * 60)
 print("PASO 4: Visualizaciones...")
-print("=" * 65)
+print("=" * 60)
 
-indices_excluir = indices_dup | set(indices_basura.keys())
-idx_limpios = {g: [] for g in range(1, 9)}
-idx_sucios  = {g: [] for g in range(1, 9)}
-for i, r in enumerate(records_raw):
-    g = r["gesture_id"]
-    (idx_sucios if i in indices_excluir else idx_limpios)[g].append(i)
+limpios = {g: [i for i,r in enumerate(records) if r["gesture_id"]==g and i not in excluir]
+           for g in range(1,9)}
+sucios  = {g: [i for i,r in enumerate(records) if r["gesture_id"]==g and i in excluir]
+           for g in range(1,9)}
+cu = cm.tab10(np.linspace(0,1,10))
+cb = cm.Blues(np.linspace(0.35,0.9,5))
 
-colores_u = cm.tab10(np.linspace(0, 1, 10))
-colores_b = cm.Blues(np.linspace(0.35, 0.9, 5))
-
-# 01 - Trayectorias user_01
-fig, axes = plt.subplots(2, 4, figsize=(16, 8))
-fig.suptitle("Gestos - user_01", fontsize=12, fontweight="bold")
-for gidx, g in enumerate(range(1, 9)):
-    ax    = axes[gidx // 4][gidx % 4]
-    files = sorted((DATA_DIR / "user_01").glob(f"gesture_0{g}_sample_*.csv"))
-    for k, f in enumerate(files[:5]):
+# 01 - user_01
+fig, axes = plt.subplots(2, 4, figsize=(16,8))
+fig.suptitle("Gestos — user_01  (● inicio, ▲ fin)", fontsize=12, fontweight="bold")
+for gi, g in enumerate(range(1,9)):
+    ax = axes[gi//4][gi%4]
+    for k, f in enumerate(sorted((DATA_DIR/"user_01").glob(f"gesture_0{g}_sample_*.csv"))[:5]):
         df = pd.read_csv(f)
-        ax.plot(df["x"], df["y"], color=colores_b[k], alpha=0.8, linewidth=1.8)
-        ax.plot(df["x"].iloc[0],  df["y"].iloc[0],  "go", markersize=5)
-        ax.plot(df["x"].iloc[-1], df["y"].iloc[-1], "r^", markersize=5)
-    ax.set_title(f"G{g} - {DIRECCIONES[g]}", fontweight="bold", fontsize=9)
+        ax.plot(df["x"], df["y"], color=cb[k], alpha=0.8, lw=1.8)
+        ax.plot(df["x"].iloc[0], df["y"].iloc[0], "go", ms=5)
+        ax.plot(df["x"].iloc[-1], df["y"].iloc[-1], "r^", ms=5)
+    ax.set_title(f"G{g} {NOMBRE[g]}", fontweight="bold", fontsize=9)
     ax.set_xlabel("X"); ax.set_ylabel("Y")
     ax.grid(True, alpha=0.3); ax.set_aspect("equal")
+    ax.invert_yaxis()  # <--- CORRECCIÓN AÑADIDA AQUÍ
 plt.tight_layout()
-plt.savefig(GRAFICAS_DIR / "01_trayectorias_user01.png", dpi=120, bbox_inches="tight")
-plt.close()
-print("  Guardada: 01_trayectorias_user01.png")
+plt.savefig(GRAFICAS_DIR/"01_trayectorias_user01.png", dpi=120, bbox_inches="tight")
+plt.close(); print("  01_trayectorias_user01.png")
 
-# 02 - Antes (basura en rojo)
-fig, axes = plt.subplots(2, 4, figsize=(18, 9))
+# 02 - Antes (basura rojo)
+fig, axes = plt.subplots(2, 4, figsize=(18,9))
 fig.suptitle("ANTES de limpieza  (rojo = eliminada)", fontsize=12, fontweight="bold")
-for gidx, g in enumerate(range(1, 9)):
-    ax = axes[gidx // 4][gidx % 4]
-    for i, r in enumerate(records_raw):
-        if r["gesture_id"] != g:
-            continue
-        es_b = i in indices_excluir
+for gi, g in enumerate(range(1,9)):
+    ax = axes[gi//4][gi%4]
+    for i, r in enumerate(records):
+        if r["gesture_id"] != g: continue
+        es_b = i in excluir
         ax.plot(r["df"]["x"], r["df"]["y"],
-                color="red" if es_b else colores_u[r["user_id"]-1],
-                alpha=0.7 if es_b else 0.20,
-                linewidth=1.8 if es_b else 0.9,
+                color="red" if es_b else cu[r["user_id"]-1],
+                alpha=0.7 if es_b else 0.20, lw=1.8 if es_b else 0.9,
                 zorder=5 if es_b else 1)
-    ax.set_title(f"G{g} - {DIRECCIONES[g]}", fontweight="bold", fontsize=8)
+    ax.set_title(f"G{g} {NOMBRE[g]}", fontweight="bold", fontsize=8)
     ax.set_xlabel("X"); ax.set_ylabel("Y")
     ax.grid(True, alpha=0.3); ax.set_aspect("equal")
+    ax.invert_yaxis()  # <--- CORRECCIÓN AÑADIDA AQUÍ
 axes[0][0].legend(handles=[
-    Line2D([0],[0], color="gray", alpha=0.5, label="Valida"),
-    Line2D([0],[0], color="red",  alpha=0.8, label="Eliminada")], fontsize=7)
+    Line2D([0],[0],color="gray",alpha=0.5,label="Valida"),
+    Line2D([0],[0],color="red",alpha=0.8,label="Eliminada")], fontsize=7)
 plt.tight_layout()
-plt.savefig(GRAFICAS_DIR / "02_antes_limpieza.png", dpi=120, bbox_inches="tight")
-plt.close()
-print("  Guardada: 02_antes_limpieza.png")
+plt.savefig(GRAFICAS_DIR/"02_antes_limpieza.png", dpi=120, bbox_inches="tight")
+plt.close(); print("  02_antes_limpieza.png")
 
 # 03 - Despues (solo validas)
-fig, axes = plt.subplots(2, 4, figsize=(18, 9))
-fig.suptitle("DESPUES de limpieza DTW (solo muestras validas)",
-             fontsize=12, fontweight="bold")
-for gidx, g in enumerate(range(1, 9)):
-    ax = axes[gidx // 4][gidx % 4]
-    for i in idx_limpios[g]:
-        r = records_raw[i]
-        ax.plot(r["df"]["x"], r["df"]["y"],
-                color=colores_u[r["user_id"]-1], alpha=0.3, linewidth=0.9)
-    ax.set_title(f"G{g} - {DIRECCIONES[g]}\n"
-                 f"({len(idx_limpios[g])} validas, {len(idx_sucios[g])} eliminadas)",
+fig, axes = plt.subplots(2, 4, figsize=(18,9))
+fig.suptitle("DESPUES de limpieza DTW", fontsize=12, fontweight="bold")
+for gi, g in enumerate(range(1,9)):
+    ax = axes[gi//4][gi%4]
+    for i in limpios[g]:
+        r = records[i]
+        ax.plot(r["df"]["x"], r["df"]["y"], color=cu[r["user_id"]-1], alpha=0.3, lw=0.9)
+    ax.set_title(f"G{g} {NOMBRE[g]}\n({len(limpios[g])} validas, {len(sucios[g])} elim.)",
                  fontweight="bold", fontsize=8)
     ax.set_xlabel("X"); ax.set_ylabel("Y")
     ax.grid(True, alpha=0.3); ax.set_aspect("equal")
+    ax.invert_yaxis()  # <--- CORRECCIÓN AÑADIDA AQUÍ
 plt.tight_layout()
-plt.savefig(GRAFICAS_DIR / "03_despues_limpieza_DTW.png", dpi=120, bbox_inches="tight")
-plt.close()
-print("  Guardada: 03_despues_limpieza_DTW.png")
-
-# 04 - Validas vs eliminadas
-fig, ax = plt.subplots(figsize=(11, 5))
-x_pos   = np.arange(8)
-n_valid = [len(idx_limpios[g]) for g in range(1, 9)]
-n_elim  = [len(idx_sucios[g])  for g in range(1, 9)]
-b1 = ax.bar(x_pos-0.2, n_valid, 0.38, label="Validas",    color="#2E75B6", alpha=0.85)
-b2 = ax.bar(x_pos+0.2, n_elim,  0.38, label="Eliminadas", color="#C00000", alpha=0.85)
-for b in b1:
-    ax.text(b.get_x()+b.get_width()/2, b.get_height()+0.5,
-            str(int(b.get_height())), ha="center", fontsize=9)
-for b in b2:
-    if b.get_height() > 0:
-        ax.text(b.get_x()+b.get_width()/2, b.get_height()+0.5,
-                str(int(b.get_height())), ha="center", fontsize=9, color="#C00000")
-ax.set_xticks(x_pos)
-ax.set_xticklabels([f"G{g}\n{DIRECCIONES[g]}" for g in range(1,9)], fontsize=7.5)
-ax.set_ylabel("N muestras")
-ax.set_title("Muestras validas vs eliminadas (DTW)", fontweight="bold", fontsize=11)
-ax.legend(); ax.grid(True, alpha=0.3, axis="y")
-ax.text(0.98, 0.97, f"Eliminadas: {sum(n_elim)}\nValidas: {sum(n_valid)}",
-    ha="right", va="top", transform=ax.transAxes, fontsize=9,
-    bbox=dict(boxstyle="round", facecolor="#FFF2CC", alpha=0.9))
-plt.tight_layout()
-plt.savefig(GRAFICAS_DIR / "04_validas_vs_eliminadas.png", dpi=120, bbox_inches="tight")
-plt.close()
-print("  Guardada: 04_validas_vs_eliminadas.png")
-
-# 05 - Distribucion final
-fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-fig.suptitle("Distribucion dataset limpio", fontsize=13, fontweight="bold")
-c_g = pd.Series({g: len(idx_limpios[g]) for g in range(1, 9)})
-c_u = pd.Series({
-    u: sum(1 for i in range(len(records_raw))
-           if i not in indices_excluir and records_raw[i]["user_id"] == u)
-    for u in range(1, 11)})
-axes[0].bar([f"G{i}" for i in c_g.index], c_g.values, color="steelblue", edgecolor="white")
-axes[0].set_title("Por Gesto"); axes[0].set_ylabel("Cantidad")
-for i, v in enumerate(c_g.values):
-    axes[0].text(i, v+0.5, str(v), ha="center", fontsize=9)
-axes[1].bar([f"U{i}" for i in c_u.index], c_u.values, color="coral", edgecolor="white")
-axes[1].set_title("Por Usuario"); axes[1].set_ylabel("Cantidad")
-for i, v in enumerate(c_u.values):
-    axes[1].text(i, v+0.5, str(v), ha="center", fontsize=9)
-plt.tight_layout()
-plt.savefig(GRAFICAS_DIR / "05_distribucion_limpia.png", dpi=120, bbox_inches="tight")
-plt.close()
-print("  Guardada: 05_distribucion_limpia.png")
-
-# 06 - Boxplot longitudes
-fig, ax = plt.subplots(figsize=(12, 5))
-data_box = [[records_raw[i]["n_points"] for i in idx_limpios[g]] for g in range(1, 9)]
-ax.boxplot(data_box, tick_labels=[f"G{g}" for g in range(1,9)],
-           patch_artist=True, boxprops=dict(facecolor="lightblue"))
-ax.axhline(promedio_global, color="red",   linestyle="--", linewidth=1.5,
-           label=f"Promedio global={promedio_global:.1f}")
-ax.axhline(N_RESAMPLE,      color="green", linestyle="--", linewidth=1.5,
-           label=f"N_RESAMPLE={N_RESAMPLE}")
-ax.set_title("Longitud de trayectorias (limpio)", fontsize=11, fontweight="bold")
-ax.set_xlabel("Gesto"); ax.set_ylabel("Puntos"); ax.legend()
-ax.grid(True, alpha=0.3, axis="y")
-plt.tight_layout()
-plt.savefig(GRAFICAS_DIR / "06_longitud_boxplot.png", dpi=120, bbox_inches="tight")
-plt.close()
-print("  Guardada: 06_longitud_boxplot.png")
+plt.savefig(GRAFICAS_DIR/"03_despues_limpieza_DTW.png", dpi=120, bbox_inches="tight")
+plt.close(); print("  03_despues_limpieza_DTW.png")
 
 
 # ════════════════════════════════════════════════════════════════
 #  PASO 5 — EXTRACCION DE FEATURES
 # ════════════════════════════════════════════════════════════════
-print("\n" + "=" * 65)
+print("\n" + "=" * 60)
 print(f"PASO 5: Extraccion de features (N={N_RESAMPLE})...")
-print("=" * 65)
+print("=" * 60)
 
-def extract_features(df_sample, n_points=N_RESAMPLE):
-    x = df_sample["x"].values.astype(float)
-    y = df_sample["y"].values.astype(float)
-    if len(x) >= 4:
-        try:
-            tck, u   = splprep([x, y], s=0, k=3)
-            u_new    = np.linspace(0, 1, n_points)
-            x_r, y_r = splev(u_new, tck)
-        except Exception:
-            t = np.linspace(0, 1, len(x)); t_n = np.linspace(0, 1, n_points)
-            x_r = np.interp(t_n, t, x);   y_r  = np.interp(t_n, t, y)
-    else:
-        t = np.linspace(0, 1, len(x)); t_n = np.linspace(0, 1, n_points)
-        x_r = np.interp(t_n, t, x);   y_r  = np.interp(t_n, t, y)
-    dx_local = np.diff(x_r)
-    dy_local = np.diff(y_r)
-    dx_g   = float(x[-1] - x[0])
-    dy_g   = float(y[-1] - y[0])
-    angle  = float(np.arctan2(dy_g, dx_g))
-    length = float(np.sum(np.sqrt(np.diff(x)**2 + np.diff(y)**2)))
-    return list(dx_local) + list(dy_local) + [dx_g, dy_g, angle, length]
+def extract_features(df_s):
+    x = df_s["x"].values.astype(float)
+    y = df_s["y"].values.astype(float)
+    try:
+        tck,_ = splprep([x,y], s=0, k=min(3,len(x)-1))
+        xr,yr = splev(np.linspace(0,1,N_RESAMPLE), tck)
+    except Exception:
+        t = np.linspace(0,1,len(x)); tn = np.linspace(0,1,N_RESAMPLE)
+        xr = np.interp(tn,t,x); yr = np.interp(tn,t,y)
+    dxg = float(x[-1]-x[0]); dyg = float(y[-1]-y[0])
+    return (list(np.diff(xr)) + list(np.diff(yr)) +
+            [dxg, dyg, float(np.arctan2(dyg,dxg)),
+             float(np.sum(np.sqrt(np.diff(x)**2+np.diff(y)**2)))])
 
 rows = []
-for i, r in enumerate(records_raw):
-    if i in indices_excluir:
-        continue
-    if r["n_points"] < 3:
-        continue
+for i, r in enumerate(records):
+    if i in excluir or r["n_points"] < 3: continue
     rows.append([r["user_id"], r["gesture_id"]] + extract_features(r["df"]))
 
-N_DELTA   = N_RESAMPLE - 1
-feat_cols = ([f"dx_{i}" for i in range(N_DELTA)] +
-             [f"dy_{i}" for i in range(N_DELTA)] +
-             ["dx_global", "dy_global", "angle", "total_length"])
-df_full   = pd.DataFrame(rows, columns=["user_id", "gesture_label"] + feat_cols)
-
-print(f"  Dataset limpio: {df_full.shape[0]} filas x {df_full.shape[1]} columnas")
-print(f"  Muestras por gesto:")
-print(df_full["gesture_label"].value_counts().sort_index().to_string())
+N_D = N_RESAMPLE - 1
+feat_cols = ([f"dx_{i}" for i in range(N_D)] + [f"dy_{i}" for i in range(N_D)] +
+             ["dx_global","dy_global","angle","total_length"])
+df_full = pd.DataFrame(rows, columns=["user_id","gesture_label"]+feat_cols)
+print(f"  Dataset: {df_full.shape[0]} muestras x {df_full.shape[1]} cols")
+print(f"  Por gesto:"); print(df_full["gesture_label"].value_counts().sort_index().to_string())
 
 
 # ════════════════════════════════════════════════════════════════
-#  PASO 6 — DIVISION DE DATOS
+#  PASO 6 — DIVISION
 # ════════════════════════════════════════════════════════════════
-print("\n" + "=" * 65)
-print("PASO 6: Division 80/20 + Cross Validation...")
-print("=" * 65)
+print("\n" + "=" * 60)
+print("PASO 6: Division de datos...")
+print("=" * 60)
 
 X = df_full[feat_cols].values
 y = df_full["gesture_label"].values
 
-# ── CAPA 1: separar 20% de validacion final (INTOCABLE) ──────────
-indices_all       = np.arange(len(df_full))
-idx_work, idx_val = train_test_split(
-    indices_all, test_size=VAL_SIZE, random_state=RANDOM_STATE, stratify=y)
+# Capa 1: 20% validacion intocable
+ia = np.arange(len(df_full))
+iw, iv = train_test_split(ia, test_size=VAL_SIZE, random_state=RANDOM_STATE, stratify=y)
+Xw, yw = X[iw], y[iw]
+Xv, yv = X[iv], y[iv]
 
-X_work_arr = X[idx_work]; y_work_arr = y[idx_work]
-X_val      = X[idx_val];  y_val      = y[idx_val]
+# Capa 2: del 80%, 80% train / 20% test
+is_ = np.arange(len(iw))
+itr_s, ite_s = train_test_split(is_, test_size=0.20, random_state=RANDOM_STATE, stratify=yw)
+itr, ite = iw[itr_s], iw[ite_s]
+Xtr, ytr = X[itr], y[itr]
+Xte, yte = X[ite], y[ite]
 
-# ── CAPA 2: del 80% de trabajo, dividir 80% train / 20% test ─────
-# (el 80% de trabajo se trata como si fuera el 100%)
-idx_sub = np.arange(len(idx_work))
-idx_tr_sub, idx_te_sub = train_test_split(
-    idx_sub, test_size=0.20, random_state=RANDOM_STATE, stratify=y_work_arr)
-
-# indices globales en df_full
-idx_train = idx_work[idx_tr_sub]   # ~64% del total
-idx_test  = idx_work[idx_te_sub]   # ~16% del total
-
-X_train = X[idx_train]; y_train = y[idx_train]
-X_test  = X[idx_test];  y_test  = y[idx_test]
-
-print(f"  Total muestras limpias   : {len(df_full)}")
-print(f"  Validacion final (20%)   : {len(idx_val):>5}  <- INTOCABLE")
-print(f"  80% de trabajo           : {len(idx_work):>5}")
-print(f"    Train  (80% del 80%)   : {len(idx_train):>5}  (~{len(idx_train)/len(df_full)*100:.0f}% del total)")
-print(f"    Test   (20% del 80%)   : {len(idx_test):>5}  (~{len(idx_test)/len(df_full)*100:.0f}% del total)")
-
-# Asignar columna split en df_full (3 valores: train / test / validation)
 df_full["split"] = "validation"
-df_full.loc[idx_train, "split"] = "train"
-df_full.loc[idx_test,  "split"] = "test"
-df_full["fold"] = 0   # solo se usa durante CV, no en el CSV final de splits
+df_full.loc[itr, "split"] = "train"
+df_full.loc[ite, "split"] = "test"
+df_full["fold"] = 0
 
-print(f"\n  Distribucion de split por gesto:")
-for g in range(1, 9):
-    mask = df_full["gesture_label"] == g
-    tr = (df_full.loc[mask, "split"] == "train").sum()
-    te = (df_full.loc[mask, "split"] == "test").sum()
-    va = (df_full.loc[mask, "split"] == "validation").sum()
-    print(f"    G{g}: train={tr}  test={te}  val={va}")
+N = len(df_full)
+print(f"  Total: {N} | Train: {len(itr)} ({len(itr)/N*100:.0f}%) | "
+      f"Test: {len(ite)} ({len(ite)/N*100:.0f}%) | Val: {len(iv)} ({len(iv)/N*100:.0f}%)")
+print(f"\n  Por gesto (train/test/val):")
+for g in range(1,9):
+    m = df_full["gesture_label"]==g
+    tr = (df_full.loc[m,"split"]=="train").sum()
+    te = (df_full.loc[m,"split"]=="test").sum()
+    va = (df_full.loc[m,"split"]=="validation").sum()
+    print(f"    G{g} {NOMBRE[g]}: train={tr} test={te} val={va}")
 
 
 # ════════════════════════════════════════════════════════════════
-#  PASO 7 — CROSS VALIDATION + EVALUACION TRAIN/TEST/VAL
+#  PASO 7 — CROSS VALIDATION (Random Forest — valida features)
 # ════════════════════════════════════════════════════════════════
-print("\n" + "=" * 65)
-print(f"PASO 7: Cross Validation + Evaluacion ({N_TREES} arboles)...")
-print("=" * 65)
+print("\n" + "=" * 60)
+print(f"PASO 7: CV 5-fold sobre TRAIN (Random Forest)...")
+print("=" * 60)
 
-gestos_list    = list(range(1, 9))
-resultados     = []
-fold_data_plot = []
+gestos = list(range(1,9))
+skf    = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=RANDOM_STATE)
+res    = []
+fdata  = []
 
-# ── CV sobre el conjunto de TRAIN (para verificar overfitting) ───
-skf = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=RANDOM_STATE)
+print(f"\n  {'Fold':<6} {'Total':>7}   " + "   ".join([f"G{g}" for g in gestos]))
+print("  " + "-"*70)
 
-print(f"\n  Cross Validation sobre TRAIN ({len(idx_train)} muestras):")
-print(f"  {'Fold':<6} {'Total':>8}   " + "   ".join([f"G{g}" for g in gestos_list]))
-print("  " + "-" * 72)
+for fold, (tri, tei) in enumerate(skf.split(Xtr, ytr), 1):
+    clf = RandomForestClassifier(n_estimators=N_TREES, random_state=RANDOM_STATE, n_jobs=-1)
+    clf.fit(Xtr[tri], ytr[tri])
+    yp  = clf.predict(Xtr[tei])
+    yt  = ytr[tei]
+    at  = accuracy_score(yt, yp)
+    ag  = {g: accuracy_score(yt[yt==g], yp[yt==g]) if (yt==g).sum()>0 else 0.0 for g in gestos}
+    res.append({"fold":fold,"acc_total":at,"n_train":len(tri),"n_test":len(tei),
+                **{f"acc_G{g}":ag[g] for g in gestos}})
+    fdata.append({"fold":fold,
+                  "train_counts":[int((ytr[tri]==g).sum()) for g in gestos],
+                  "test_counts" :[int((yt==g).sum()) for g in gestos],
+                  "acc_total":at,"acc_gestos":[ag[g] for g in gestos]})
+    print(f"  Fold {fold}  {at*100:>6.1f}%   "+"   ".join([f"{ag[g]*100:>4.0f}%" for g in gestos]))
 
-for fold, (tr_idx, te_idx) in enumerate(skf.split(X_train, y_train), 1):
-    X_tr = X_train[tr_idx]; y_tr = y_train[tr_idx]
-    X_te = X_train[te_idx]; y_te = y_train[te_idx]
-    clf  = RandomForestClassifier(n_estimators=N_TREES, random_state=RANDOM_STATE, n_jobs=-1)
-    clf.fit(X_tr, y_tr)
-    y_pred    = clf.predict(X_te)
-    acc_total = accuracy_score(y_te, y_pred)
-    acc_g     = {g: accuracy_score(y_te[y_te==g], y_pred[y_te==g])
-                 if (y_te==g).sum() > 0 else 0.0 for g in gestos_list}
-    resultados.append({
-        "fold": fold, "acc_total": acc_total,
-        "n_train": len(y_tr), "n_test": len(y_te),
-        **{f"acc_G{g}": acc_g[g] for g in gestos_list}
-    })
-    fold_data_plot.append({
-        "fold": fold,
-        "train_counts": [int((y_tr==g).sum()) for g in gestos_list],
-        "test_counts" : [int((y_te==g).sum()) for g in gestos_list],
-        "acc_total"   : acc_total,
-        "acc_gestos"  : [acc_g[g] for g in gestos_list]
-    })
-    print(f"  Fold {fold}  {acc_total*100:>6.1f}%   " +
-          "   ".join([f"{acc_g[g]*100:>4.0f}%" for g in gestos_list]))
+df_res = pd.DataFrame(res)
+med    = df_res[[f"acc_G{g}" for g in gestos]+["acc_total"]].mean()
+print("  "+"-"*70)
+print(f"  Media  {med['acc_total']*100:>6.1f}%   "+"   ".join([f"{med[f'acc_G{g}']*100:>4.0f}%" for g in gestos]))
 
-df_res    = pd.DataFrame(resultados)
-media_row = df_res[[f"acc_G{g}" for g in gestos_list] + ["acc_total"]].mean()
+# Modelo final RF: train+test → validacion
+clf_f = RandomForestClassifier(n_estimators=N_TREES, random_state=RANDOM_STATE, n_jobs=-1)
+clf_f.fit(Xw, yw)
+ypv   = clf_f.predict(Xv)
+av    = accuracy_score(yv, ypv)
+avg   = {g: accuracy_score(yv[yv==g], ypv[yv==g]) if (yv==g).sum()>0 else 0.0 for g in gestos}
+clf_t = RandomForestClassifier(n_estimators=N_TREES, random_state=RANDOM_STATE, n_jobs=-1)
+clf_t.fit(Xtr, ytr)
+ypt   = clf_t.predict(Xte)
+at    = accuracy_score(yte, ypt)
 
-print("  " + "-" * 72)
-print(f"  Media CV  {media_row['acc_total']*100:>5.1f}%   " +
-      "   ".join([f"{media_row[f'acc_G{g}']*100:>4.0f}%" for g in gestos_list]))
-
-# ── Modelo final: entrenar con TRAIN completo, evaluar en TEST ───
-print(f"\n  Entrenando modelo con TRAIN completo ({len(idx_train)} muestras)...")
-clf_train = RandomForestClassifier(n_estimators=N_TREES, random_state=RANDOM_STATE, n_jobs=-1)
-clf_train.fit(X_train, y_train)
-y_pred_test = clf_train.predict(X_test)
-acc_test    = accuracy_score(y_test, y_pred_test)
-acc_test_g  = {g: accuracy_score(y_test[y_test==g], y_pred_test[y_test==g])
-               if (y_test==g).sum() > 0 else 0.0 for g in gestos_list}
-
-print(f"\n  RESULTADO EN TEST ({len(idx_test)} muestras, 20% del 80%):")
-print(f"  Precision total : {acc_test*100:.1f}%")
-print(f"  Por gesto: " + "   ".join([f"G{g}:{acc_test_g[g]*100:.0f}%" for g in gestos_list]))
-
-# ── Evaluacion final: entrenar con TRAIN+TEST, evaluar en VAL ────
-print(f"\n  Entrenando modelo final con TRAIN+TEST ({len(idx_work)} muestras)...")
-clf_final = RandomForestClassifier(n_estimators=N_TREES, random_state=RANDOM_STATE, n_jobs=-1)
-clf_final.fit(X_work_arr, y_work_arr)
-y_pred_val = clf_final.predict(X_val)
-acc_val    = accuracy_score(y_val, y_pred_val)
-acc_val_g  = {g: accuracy_score(y_val[y_val==g], y_pred_val[y_val==g])
-              if (y_val==g).sum() > 0 else 0.0 for g in gestos_list}
-
-print(f"\n  {'='*65}")
-print(f"  PRUEBA FINAL — 20% validacion intocable ({len(idx_val)} muestras)")
-print(f"  Precision total : {acc_val*100:.1f}%")
-print(f"  Por gesto: " + "   ".join([f"G{g}:{acc_val_g[g]*100:.0f}%" for g in gestos_list]))
-print(f"  {'='*65}")
-print(f"\n  CV media     : {media_row['acc_total']*100:.1f}%")
-print(f"  Test         : {acc_test*100:.1f}%")
-print(f"  Validacion   : {acc_val*100:.1f}%")
-print(f"  Req. > 90%   : {'CUMPLIDO' if acc_val >= 0.90 else 'NO alcanza — revisar K_STD'}")
-
+print(f"\n  Test       : {at*100:.1f}%")
+print(f"  Validacion : {av*100:.1f}%  {'CUMPLE >90%' if av>=0.90 else 'NO CUMPLE'}")
+print(f"  Por gesto  : "+"  ".join([f"G{g}:{avg[g]*100:.0f}%" for g in gestos]))
 df_res.to_csv(RESULTS_CSV, index=False)
-print(f"  Resultados CV: {RESULTS_CSV}")
 
 
 # ════════════════════════════════════════════════════════════════
-#  PASO 8 — GUARDAR DATASET FINAL
+#  PASO 8 — GUARDAR CSV
 # ════════════════════════════════════════════════════════════════
-print("\n" + "=" * 65)
+print("\n" + "=" * 60)
 print("PASO 8: Guardando dataset...")
-print("=" * 65)
+print("=" * 60)
 df_full.to_csv(OUTPUT_CSV, index=False)
-print(f"  {OUTPUT_CSV}  —  {df_full.shape[0]} filas x {df_full.shape[1]} cols")
+print(f"  {OUTPUT_CSV} — {df_full.shape[0]} filas x {df_full.shape[1]} cols")
+print(f"  splits: {df_full['split'].value_counts().to_dict()}")
 
 
 # ════════════════════════════════════════════════════════════════
-#  PASO 9 — GRAFICAS DE RESULTADOS CV
+#  PASO 9 — GRAFICAS DE RESULTADOS
 # ════════════════════════════════════════════════════════════════
-print("\n" + "=" * 65)
+print("\n" + "=" * 60)
 print("PASO 9: Graficas de resultados...")
-print("=" * 65)
+print("=" * 60)
 
-# 07 - Estructura correcta: 3 capas (pizarron de la maestra)
-fig, ax = plt.subplots(figsize=(15, 8))
-ax.set_xlim(0, 15); ax.set_ylim(0, 10); ax.axis("off")
-ax.set_title("Division de datos — estructura correcta (indicacion de la maestra)",
-             fontsize=12, fontweight="bold")
-
-# --- Nivel 1: Dataset completo ---
-ax.add_patch(mpatches.FancyBboxPatch((0.3,8.3),14.2,1.2,
-    boxstyle="round,pad=0.1",facecolor="#DDDDDD",edgecolor="#555",linewidth=2))
-ax.text(7.4, 9.0, f"DATASET LIMPIO  —  {len(df_full)} muestras  (100%)",
-    ha="center", fontweight="bold", fontsize=11)
-
-# flechas nivel 1 → nivel 2
-for xp, lbl in [(4.5,"80%"), (12.0,"20%")]:
-    ax.annotate("", xy=(xp,7.9), xytext=(xp,8.3),
-        arrowprops=dict(arrowstyle="->", color="black", lw=1.8))
-ax.text(4.5, 7.65, "80%", ha="center", fontsize=9, color="#1F4E79", fontweight="bold")
-ax.text(12.0, 7.65, "20%", ha="center", fontsize=9, color="#900000", fontweight="bold")
-
-# --- Nivel 2: 80% trabajo | 20% validacion ---
-ax.add_patch(mpatches.FancyBboxPatch((0.3,6.3),8.5,1.2,
-    boxstyle="round,pad=0.1",facecolor="#2E75B6",edgecolor="#1F4E79",linewidth=2,alpha=0.85))
-ax.text(4.55, 6.95, f"80% de TRABAJO  —  {len(idx_work)} muestras",
-    ha="center", color="white", fontweight="bold", fontsize=10)
-ax.text(4.55, 6.45, f"(se trata como el 100% para train/test)",
-    ha="center", color="#BDD7EE", fontsize=8.5)
-
-ax.add_patch(mpatches.FancyBboxPatch((9.2,6.3),5.3,1.2,
-    boxstyle="round,pad=0.1",facecolor="#C00000",edgecolor="#900000",linewidth=2,alpha=0.9))
-ax.text(11.85, 7.0, f"20% VALIDACION FINAL",
-    ha="center", color="white", fontweight="bold", fontsize=10)
-ax.text(11.85, 6.5, f"{len(idx_val)} muestras  —  INTOCABLE",
-    ha="center", color="#FFD0D0", fontsize=8.5)
-
-# flechas nivel 2 → nivel 3 (solo del 80%)
-for xp, lbl in [(2.5,"80% del 80%"), (6.8,"20% del 80%")]:
-    ax.annotate("", xy=(xp,5.9), xytext=(xp,6.3),
-        arrowprops=dict(arrowstyle="->", color="#1F4E79", lw=1.8))
-ax.text(2.5, 5.65, "80% del 80%", ha="center", fontsize=8.5, color="#1F4E79", fontweight="bold")
-ax.text(6.8, 5.65, "20% del 80%", ha="center", fontsize=8.5, color="#27AE60", fontweight="bold")
-
-# --- Nivel 3: TRAIN | TEST ---
-ax.add_patch(mpatches.FancyBboxPatch((0.3,4.3),4.7,1.2,
-    boxstyle="round,pad=0.1",facecolor="#1F4E79",edgecolor="#1F4E79",linewidth=2,alpha=0.9))
-ax.text(2.65, 5.0, f"TRAIN  —  {len(idx_train)} muestras",
-    ha="center", color="white", fontweight="bold", fontsize=10)
-ax.text(2.65, 4.5, f"(~{len(idx_train)/len(df_full)*100:.0f}% del total)",
-    ha="center", color="#BDD7EE", fontsize=8.5)
-
-ax.add_patch(mpatches.FancyBboxPatch((5.3,4.3),3.5,1.2,
-    boxstyle="round,pad=0.1",facecolor="#27AE60",edgecolor="#1E8449",linewidth=2,alpha=0.9))
-ax.text(7.05, 5.0, f"TEST  —  {len(idx_test)} muestras",
-    ha="center", color="white", fontweight="bold", fontsize=10)
-ax.text(7.05, 4.5, f"(~{len(idx_test)/len(df_full)*100:.0f}% del total)",
-    ha="center", color="#D5F5E3", fontsize=8.5)
-
-# flecha CV sobre TRAIN
-ax.annotate("", xy=(2.65,3.9), xytext=(2.65,4.3),
-    arrowprops=dict(arrowstyle="->", color="#1F4E79", lw=2, linestyle="dashed"))
-ax.text(2.65, 3.6, f"Cross Validation ({N_FOLDS} Folds)\npara verificar overfitting",
-    ha="center", fontsize=8.5, color="#1F4E79", fontweight="bold",
-    bbox=dict(boxstyle="round", facecolor="#D6EAF8", alpha=0.85))
-
-# flecha final: TRAIN+TEST → VAL
-ax.annotate("", xy=(11.85,5.0), xytext=(9.0,5.0),
-    arrowprops=dict(arrowstyle="->", color="#C00000", lw=2.5))
-ax.text(10.4, 5.2, "Modelo final\n(train+test)", ha="center", fontsize=8,
-    color="#C00000", fontweight="bold")
-
-# resumen de resultados al pie
-resultado_txt = (
-    f"CV media: {media_row['acc_total']*100:.1f}%   |   "
-    f"Test: {acc_test*100:.1f}%   |   "
-    f"Validacion final: {acc_val*100:.1f}%"
-)
-estado_col = "#1a7a1a" if acc_val >= 0.90 else "#CC0000"
-ax.text(7.4, 1.2, resultado_txt,
-    ha="center", fontsize=10, color=estado_col, fontweight="bold",
-    bbox=dict(boxstyle="round", facecolor="#D5E8D4" if acc_val>=0.90 else "#FFE0E0", alpha=0.9))
-
+# 05 - Distribucion final
+fig, axes = plt.subplots(1, 2, figsize=(13,5))
+fig.suptitle("Dataset limpio — distribucion final", fontsize=13, fontweight="bold")
+cg = pd.Series({g:len(limpios[g]) for g in range(1,9)})
+cu2= pd.Series({u:sum(1 for i,r in enumerate(records) if r["user_id"]==u and i not in excluir) for u in range(1,11)})
+axes[0].bar([f"G{i}" for i in cg.index], cg.values, color="steelblue", edgecolor="white")
+axes[0].set_title("Por Gesto"); axes[0].set_ylabel("N muestras")
+for i,v in enumerate(cg.values): axes[0].text(i,v+0.5,str(v),ha="center",fontsize=9)
+axes[1].bar([f"U{i}" for i in cu2.index], cu2.values, color="coral", edgecolor="white")
+axes[1].set_title("Por Usuario"); axes[1].set_ylabel("N muestras")
+for i,v in enumerate(cu2.values): axes[1].text(i,v+0.5,str(v),ha="center",fontsize=9)
 plt.tight_layout()
-plt.savefig(GRAFICAS_DIR / "07_estructura_division_CV.png", dpi=120, bbox_inches="tight")
-plt.close()
-print("  Guardada: 07_estructura_division_CV.png")
+plt.savefig(GRAFICAS_DIR/"05_distribucion_limpia.png", dpi=120, bbox_inches="tight")
+plt.close(); print("  05_distribucion_limpia.png")
 
-# 08 - Folds detalle
-fig, axes = plt.subplots(2, 3, figsize=(16, 9))
-fig.suptitle("Cross Validation — 5 Folds (datos limpios DTW)", fontsize=11, fontweight="bold")
-axes_flat = axes.flatten()
-for i, fdata in enumerate(fold_data_plot):
-    ax    = axes_flat[i]
-    x_pos = np.arange(8)
-    ax.bar(x_pos-0.22, fdata["train_counts"], 0.4, label="Train", color="#2E75B6", alpha=0.75)
-    ax.bar(x_pos+0.22, fdata["test_counts"],  0.4, label="Test",  color="#E67E22", alpha=0.9)
-    for j, (acc, n_te) in enumerate(zip(fdata["acc_gestos"], fdata["test_counts"])):
-        ax.text(x_pos[j]+0.22, n_te+1, f"{acc*100:.0f}%",
-                ha="center", va="bottom", fontsize=8.5, fontweight="bold",
-                color="#1a7a1a" if acc >= 0.90 else "#CC0000")
-    acc_t   = fdata["acc_total"]
-    ax.set_title(f"Fold {fdata['fold']}  —  {acc_t*100:.1f}%",
-                 fontweight="bold", fontsize=10,
-                 color="#1a7a1a" if acc_t >= 0.90 else "#CC0000")
-    ax.set_xticks(x_pos); ax.set_xticklabels([f"G{g}" for g in gestos_list])
-    ax.set_ylabel("N muestras")
-    ax.set_ylim(0, max(max(fdata["train_counts"]) * 1.15, 20))
-    ax.legend(fontsize=8, loc="upper right"); ax.grid(True, alpha=0.3, axis="y")
-
-# Panel resumen (slot 6)
-ax = axes_flat[5]; ax.axis("off"); ax.set_facecolor("#F0F7FF")
-ax.text(0.5, 0.97, "Tabla resumen por fold",
-    ha="center", va="top", fontweight="bold", fontsize=11,
-    transform=ax.transAxes, color="#1F4E79")
-headers = ["Fold","Total"] + [f"G{g}" for g in gestos_list]
-col_xs  = [0.03, 0.14] + [0.14+0.10*(j+1) for j in range(8)]
-y_t     = 0.89
-ax.add_patch(plt.Rectangle((0.01,y_t-0.055),0.98,0.055,
-    facecolor="#2E75B6",transform=ax.transAxes,alpha=0.9))
-for cx, h in zip(col_xs, headers):
-    ax.text(cx+0.01, y_t-0.025, h, transform=ax.transAxes,
-        fontsize=8, color="white", fontweight="bold", va="center")
-y_t -= 0.062
-for fi, res in enumerate(resultados):
-    bg = "#F2F7FB" if fi%2==0 else "white"
-    ax.add_patch(plt.Rectangle((0.01,y_t-0.055),0.98,0.055,
-        facecolor=bg,transform=ax.transAxes,alpha=0.9))
-    vals = [str(res["fold"]), f"{res['acc_total']*100:.1f}%"] + \
-           [f"{res[f'acc_G{g}']*100:.0f}%" for g in gestos_list]
-    for cx, v in zip(col_xs, vals):
-        c = "#1a7a1a" if "%" in v and float(v.replace("%","")) >= 90 else "#333"
-        ax.text(cx+0.01, y_t-0.025, v, transform=ax.transAxes, fontsize=7.5, color=c, va="center")
-    y_t -= 0.062
-ax.add_patch(plt.Rectangle((0.01,y_t-0.055),0.98,0.055,
-    facecolor="#E8F4E8",transform=ax.transAxes,alpha=0.9))
-for cx, v in zip(col_xs, ["Media", f"{media_row['acc_total']*100:.1f}%"] +
-                           [f"{media_row[f'acc_G{g}']*100:.0f}%" for g in gestos_list]):
-    ax.text(cx+0.01, y_t-0.025, v, transform=ax.transAxes,
-        fontsize=7.5, color="#1a7a1a", fontweight="bold", va="center")
-y_t -= 0.072
-ax.add_patch(plt.Rectangle((0.01,y_t-0.055),0.98,0.055,
-    facecolor="#C00000",transform=ax.transAxes,alpha=0.15))
-for cx, v in zip(col_xs, ["Final", f"{acc_val*100:.1f}%"] +
-                           [f"{acc_val_g[g]*100:.0f}%" for g in gestos_list]):
-    ax.text(cx+0.01, y_t-0.025, v, transform=ax.transAxes,
-        fontsize=7.5, color="#900000", fontweight="bold", va="center")
-ax.text(0.5, 0.05, f"Promedio CV: {media_row['acc_total']*100:.1f}%  |  Final: {acc_val*100:.1f}%",
-    ha="center", va="center", transform=ax.transAxes, fontsize=9.5, fontweight="bold",
-    color="#1a7a1a", bbox=dict(boxstyle="round", facecolor="#D5E8D4", alpha=0.9))
+# 06 - Estructura de division
+fig, ax = plt.subplots(figsize=(13,7)); ax.set_xlim(0,13); ax.set_ylim(0,9); ax.axis("off")
+ax.set_title("Division de datos (indicacion de la maestra)", fontsize=12, fontweight="bold")
+ax.add_patch(mpatches.FancyBboxPatch((0.3,7.5),12.2,1.0,boxstyle="round,pad=0.1",facecolor="#DDD",edgecolor="#555",lw=2))
+ax.text(6.4,8.05,f"DATASET LIMPIO — {len(df_full)} muestras (100%)",ha="center",fontweight="bold",fontsize=10)
+for xp,lbl in [(3.5,"80%"),(10,"20%")]:
+    ax.annotate("",xy=(xp,7.2),xytext=(xp,7.5),arrowprops=dict(arrowstyle="->",color="black",lw=1.5))
+ax.add_patch(mpatches.FancyBboxPatch((0.3,6.0),7.0,1.0,boxstyle="round,pad=0.1",facecolor="#2E75B6",edgecolor="#1F4E79",lw=2,alpha=0.85))
+ax.text(3.8,6.55,f"80% Trabajo — {len(iw)} muestras",ha="center",color="white",fontweight="bold",fontsize=10)
+ax.add_patch(mpatches.FancyBboxPatch((7.6,6.0),4.9,1.0,boxstyle="round,pad=0.1",facecolor="#C00000",edgecolor="#900000",lw=2,alpha=0.9))
+ax.text(10.05,6.55,f"20% VALIDACION — {len(iv)} muestras\n(INTOCABLE)",ha="center",color="white",fontweight="bold",fontsize=9)
+for xp in [2.2,5.6]:
+    ax.annotate("",xy=(xp,5.7),xytext=(xp,6.0),arrowprops=dict(arrowstyle="->",color="#1F4E79",lw=1.5))
+ax.add_patch(mpatches.FancyBboxPatch((0.3,4.5),3.7,1.0,boxstyle="round,pad=0.1",facecolor="#1F4E79",edgecolor="#1F4E79",lw=2,alpha=0.9))
+ax.text(2.2,5.05,f"TRAIN — {len(itr)} ({len(itr)/N*100:.0f}%)",ha="center",color="white",fontweight="bold",fontsize=10)
+ax.add_patch(mpatches.FancyBboxPatch((4.3,4.5),3.0,1.0,boxstyle="round,pad=0.1",facecolor="#27AE60",edgecolor="#1E8449",lw=2,alpha=0.9))
+ax.text(5.8,5.05,f"TEST — {len(ite)} ({len(ite)/N*100:.0f}%)",ha="center",color="white",fontweight="bold",fontsize=10)
+ax.annotate("",xy=(2.2,4.2),xytext=(2.2,4.5),arrowprops=dict(arrowstyle="->",color="#1F4E79",lw=2,linestyle="dashed"))
+ax.text(2.2,3.9,f"CV {N_FOLDS}-Fold\n(verifica overfitting)",ha="center",fontsize=8.5,color="#1F4E79",fontweight="bold",
+    bbox=dict(boxstyle="round",facecolor="#D6EAF8",alpha=0.85))
+ax.text(6.4,1.5,f"CV media: {med['acc_total']*100:.1f}%  |  Test: {at*100:.1f}%  |  Val. final: {av*100:.1f}%",
+    ha="center",fontsize=10,fontweight="bold",
+    color="#1a7a1a" if av>=0.90 else "#CC0000",
+    bbox=dict(boxstyle="round",facecolor="#D5E8D4" if av>=0.90 else "#FFE0E0",alpha=0.9))
 plt.tight_layout()
-plt.savefig(GRAFICAS_DIR / "08_cross_validation_resultados.png",
-            dpi=130, bbox_inches="tight", facecolor="white")
-plt.close()
-print("  Guardada: 08_cross_validation_resultados.png")
+plt.savefig(GRAFICAS_DIR/"06_estructura_division.png", dpi=120, bbox_inches="tight")
+plt.close(); print("  06_estructura_division.png")
 
-# 09 - Vista previa dataset
-cols_show = ["gesture_label","user_id","dx_0","dx_1","dx_2","dy_0","dy_1","dy_2",
-             "dx_global","dy_global","angle","total_length","split","fold"]
-df_fmt = df_full[cols_show].head(10).copy()
-for col in df_fmt.select_dtypes(include=float).columns:
-    df_fmt[col] = df_fmt[col].apply(lambda v: f"{v:.3f}")
-df_fmt["fold"] = df_fmt["fold"].astype(str)
-fig, ax = plt.subplots(figsize=(18, 4)); ax.axis("off")
-col_labels = ["gesture\nlabel","user\nid","dx_0","dx_1","dx_2","dy_0","dy_1","dy_2",
-              "dx\nglobal","dy\nglobal","angle","total\nlength","split","fold"]
-table = ax.table(cellText=df_fmt.values, colLabels=col_labels, cellLoc="center", loc="center")
-table.auto_set_font_size(False); table.set_fontsize(8.5); table.scale(1, 1.9)
-for j in range(len(col_labels)):
-    table[0,j].set_facecolor("#2E75B6")
-    table[0,j].set_text_props(color="white", fontweight="bold")
-for i in range(1, 11):
-    for j in range(len(col_labels)):
-        table[i,j].set_facecolor("#F2F7FB" if i%2==0 else "white")
-        if j == 0:
-            table[i,j].set_facecolor("#D6E4F0")
-            table[i,j].set_text_props(fontweight="bold")
-ax.set_title("Vista previa dataset_gestos_final.csv — primeras 10 filas",
-             fontsize=10, fontweight="bold", pad=18)
-plt.tight_layout()
-plt.savefig(GRAFICAS_DIR / "09_captura_dataset.png",
-            dpi=130, bbox_inches="tight", facecolor="white")
-plt.close()
-print("  Guardada: 09_captura_dataset.png")
-
-# 10 - Tabla resultados por clase
-fig = plt.figure(figsize=(16, 10)); fig.patch.set_facecolor('white')
-fig.text(0.5, 0.97, "Precision por Clase — CV con datos limpios (DTW)",
-    ha='center', va='top', fontsize=13, fontweight='bold', color='#1F4E79')
-ax_t = fig.add_axes([0.03, 0.42, 0.94, 0.47]); ax_t.axis('off')
-fd = []
-for r in resultados:
-    fd.append([f"Fold {int(r['fold'])}", f"{r['acc_total']*100:.1f}%"] +
-               [f"{r[f'acc_G{g}']*100:.0f}%" for g in gestos_list])
-fd.append(["Media", f"{media_row['acc_total']*100:.1f}%"] +
-           [f"{media_row[f'acc_G{g}']*100:.0f}%" for g in gestos_list])
-fd.append(["Val. Final", f"{acc_val*100:.1f}%"] +
-           [f"{acc_val_g[g]*100:.0f}%" for g in gestos_list])
-clt = ["", "Total"] + [f"G{g}" for g in gestos_list]
-tbl = ax_t.table(cellText=fd, colLabels=clt, cellLoc='center', loc='center')
-tbl.auto_set_font_size(False); tbl.set_fontsize(11); tbl.scale(1, 2.8)
+# 07 - Tabla de resultados CV
+fig = plt.figure(figsize=(16,9)); fig.patch.set_facecolor('white')
+fig.text(0.5,0.97,"Resultados CV — Random Forest (validacion de features)",
+    ha='center',va='top',fontsize=13,fontweight='bold',color='#1F4E79')
+ax_t = fig.add_axes([0.02,0.48,0.96,0.45]); ax_t.axis('off')
+clt = ["","Total"]+[f"G{g}" for g in gestos]
+fd2 = []
+for r in res:
+    fd2.append([f"Fold {int(r['fold'])}",f"{r['acc_total']*100:.1f}%"]+[f"{r[f'acc_G{g}']*100:.0f}%" for g in gestos])
+fd2.append(["Media",f"{med['acc_total']*100:.1f}%"]+[f"{med[f'acc_G{g}']*100:.0f}%" for g in gestos])
+fd2.append(["Val.Final",f"{av*100:.1f}%"]+[f"{avg[g]*100:.0f}%" for g in gestos])
+tbl = ax_t.table(cellText=fd2,colLabels=clt,cellLoc='center',loc='center')
+tbl.auto_set_font_size(False); tbl.set_fontsize(10.5); tbl.scale(1,2.5)
 for j in range(len(clt)):
-    tbl[0,j].set_facecolor('#1F4E79')
-    tbl[0,j].set_text_props(color='white', fontweight='bold', fontsize=10)
-for i in range(1, 6):
-    tbl[i,0].set_facecolor('#D6E4F0')
-    tbl[i,0].set_text_props(fontweight='bold', color='#1F4E79')
-    at = resultados[i-1]['acc_total']
-    tbl[i,1].set_facecolor('#D5E8D4' if at>=0.90 else '#FFE0E0')
-    tbl[i,1].set_text_props(fontweight='bold', color='#1a7a1a' if at>=0.90 else '#CC0000')
-    for j, g in enumerate(gestos_list):
-        ag = resultados[i-1][f'acc_G{g}']
-        bg = '#C8F0C8' if ag>=0.98 else ('#FFF0C0' if ag>=0.90 else '#FFCCCC')
-        tbl[i,j+2].set_facecolor(bg)
-        tbl[i,j+2].set_text_props(fontweight='bold', color='#1a7a1a' if ag>=0.90 else '#CC0000')
+    tbl[0,j].set_facecolor('#1F4E79'); tbl[0,j].set_text_props(color='white',fontweight='bold')
+for i in range(1,N_FOLDS+1):
+    tbl[i,0].set_facecolor('#D6E4F0'); tbl[i,0].set_text_props(fontweight='bold',color='#1F4E79')
+    for j in range(1,len(clt)):
+        v=float(fd2[i-1][j].replace('%',''))
+        bg='#C8F0C8' if v>=99 else ('#D5E8D4' if v>=90 else '#FFE0E0')
+        co='#1a7a1a' if v>=90 else '#CC0000'
+        tbl[i,j].set_facecolor(bg); tbl[i,j].set_text_props(color=co,fontweight='bold')
 for j in range(len(clt)):
-    tbl[6,j].set_facecolor('#2E75B6'); tbl[6,j].set_text_props(color='white', fontweight='bold')
-    tbl[7,j].set_facecolor('#7B0000'); tbl[7,j].set_text_props(color='white', fontweight='bold')
-ax_b = fig.add_axes([0.05, 0.05, 0.60, 0.32])
-x = np.arange(8); width = 0.13
-for i, (r, c) in enumerate(zip(resultados, ['#2980B9','#27AE60','#E67E22','#8E44AD','#16A085'])):
-    ax_b.bar(x+i*width-width*2, [r[f'acc_G{g}']*100 for g in gestos_list],
-             width, label=f"Fold {int(r['fold'])}", color=c, alpha=0.8)
-ax_b.plot(x+width/2, [acc_val_g[g]*100 for g in gestos_list],
-    'r--o', linewidth=2.5, markersize=7, label='Val. Final', zorder=5)
-ax_b.axhline(90, color='red', linestyle=':', linewidth=1.5, alpha=0.6, label='90%')
-ax_b.set_xticks(x+width); ax_b.set_xticklabels([f"G{g}" for g in gestos_list], fontsize=9)
-ax_b.set_ylabel('Precision (%)'); ax_b.set_ylim(75, 108)
-ax_b.set_title('Precision por clase', fontweight='bold')
-ax_b.legend(fontsize=8, ncol=3, loc='lower right'); ax_b.grid(True, alpha=0.3, axis='y')
-ax_r = fig.add_axes([0.68, 0.05, 0.30, 0.32])
-ax_r.axis('off'); ax_r.set_facecolor('#F0F7FF')
-ax_r.text(0.5, 0.97, "Resumen Final", ha='center', va='top',
-    fontweight='bold', fontsize=12, color='#1F4E79', transform=ax_r.transAxes)
-for y_l, (etiq, val, col) in zip([0.82,0.665,0.51,0.355,0.20], [
-    ("Promedio CV:",      f"{media_row['acc_total']*100:.1f}%", '#2E75B6'),
-    ("Val. Final:",       f"{acc_val*100:.1f}%",               '#7B0000'),
-    ("Minimo requerido:", "> 90%",                              '#555555'),
-    ("Elim. DTW:",        f"{r2_total} muestras",              '#E67E22'),
-    ("Dataset limpio:",   f"{len(df_full)} muestras",          '#27AE60'),
+    tbl[N_FOLDS+1,j].set_facecolor('#2E75B6'); tbl[N_FOLDS+1,j].set_text_props(color='white',fontweight='bold')
+    tbl[N_FOLDS+2,j].set_facecolor('#7B0000'); tbl[N_FOLDS+2,j].set_text_props(color='white',fontweight='bold')
+ax_b = fig.add_axes([0.03,0.04,0.60,0.37])
+xp = np.arange(8); w = 0.13
+for i,(r,c) in enumerate(zip(res,['#2980B9','#27AE60','#E67E22','#8E44AD','#16A085'])):
+    ax_b.bar(xp+i*w-w*2,[r[f'acc_G{g}']*100 for g in gestos],w,label=f"Fold {int(r['fold'])}",color=c,alpha=0.8)
+ax_b.plot(xp+w/2,[avg[g]*100 for g in gestos],'r--o',lw=2.5,ms=7,label='Val.Final',zorder=5)
+ax_b.axhline(90,color='red',ls=':',lw=1.5,alpha=0.6,label='90%')
+ax_b.set_xticks(xp+w); ax_b.set_xticklabels([f"G{g}\n{NOMBRE[g]}" for g in gestos],fontsize=7.5)
+ax_b.set_ylim(60,108); ax_b.set_ylabel('Accuracy (%)'); ax_b.set_title('Accuracy por clase',fontweight='bold')
+ax_b.legend(fontsize=8,ncol=3,loc='lower right'); ax_b.grid(True,alpha=0.3,axis='y')
+ax_r = fig.add_axes([0.66,0.04,0.32,0.37]); ax_r.axis('off'); ax_r.set_facecolor('#F0F7FF')
+ax_r.text(0.5,0.96,"Resumen",ha='center',va='top',fontweight='bold',fontsize=12,color='#1F4E79',transform=ax_r.transAxes)
+for yi,(lbl,val,col) in zip(np.linspace(0.82,0.22,5),[
+    ("CV media:",f"{med['acc_total']*100:.1f}%",'#2E75B6'),
+    ("Test:",f"{at*100:.1f}%",'#27AE60'),
+    ("Val.Final:",f"{av*100:.1f}%",'#7B0000'),
+    ("Elim.DTW:",f"{len(basura)} muestras",'#E67E22'),
+    ("Dataset:",f"{len(df_full)} muestras",'#27AE60'),
 ]):
-    ax_r.text(0.08, y_l, etiq, fontsize=9.5, color='#333', transform=ax_r.transAxes, va='top')
-    ax_r.text(0.93, y_l, val, fontsize=10.5, fontweight='bold',
-        color=col, transform=ax_r.transAxes, va='top', ha='right')
-ax_r.add_patch(mpatches.FancyBboxPatch((0.05,0.04),0.90,0.12,
-    boxstyle="round,pad=0.05", facecolor='#D5E8D4', edgecolor='#27AE60',
-    linewidth=2, transform=ax_r.transAxes))
-ax_r.text(0.5, 0.10,
-    f"{'APROBADO' if acc_val >= 0.90 else 'REVISAR'} — "
-    f"{'Supera' if acc_val >= 0.90 else 'No alcanza'} 90%",
-    ha='center', va='center', fontsize=9.5, fontweight='bold',
-    color='#1a7a1a' if acc_val >= 0.90 else '#CC0000', transform=ax_r.transAxes)
-plt.savefig(GRAFICAS_DIR / "10_tabla_resultados_por_clase.png",
-            dpi=140, bbox_inches='tight', facecolor='white')
-plt.close()
-print("  Guardada: 10_tabla_resultados_por_clase.png")
-
-# 11 - Mapa de calor basura
-fig, ax = plt.subplots(figsize=(10, 6))
-heat = np.zeros((10, 8))
-for brow in basura_rows:
-    heat[brow["user_id"]-1, brow["gesture_id"]-1] += 1
-im = ax.imshow(heat, cmap="Reds", aspect="auto", vmin=0)
-ax.set_xticks(range(8)); ax.set_xticklabels([f"G{g}" for g in range(1,9)])
-ax.set_yticks(range(10)); ax.set_yticklabels([f"U{u}" for u in range(1,11)])
-ax.set_xlabel("Gesto"); ax.set_ylabel("Usuario")
-ax.set_title("Muestras eliminadas por usuario y gesto (DTW)", fontweight="bold")
-plt.colorbar(im, ax=ax, label="N eliminadas")
-for i in range(10):
-    for j in range(8):
-        v = int(heat[i, j])
-        if v > 0:
-            ax.text(j, i, str(v), ha="center", va="center", fontsize=11, fontweight="bold",
-                    color="white" if v > 1 else "darkred")
-plt.tight_layout()
-plt.savefig(GRAFICAS_DIR / "11_mapa_calor_basura.png", dpi=120, bbox_inches="tight")
-plt.close()
-print("  Guardada: 11_mapa_calor_basura.png")
+    ax_r.text(0.08,yi,lbl,fontsize=10,color='#333',transform=ax_r.transAxes,va='center')
+    ax_r.text(0.92,yi,val,fontsize=11,fontweight='bold',color=col,transform=ax_r.transAxes,va='center',ha='right')
+fc='#D5E8D4' if av>=0.90 else '#FFE0E0'
+ec='#27AE60' if av>=0.90 else '#CC0000'
+ax_r.add_patch(mpatches.FancyBboxPatch((0.05,0.04),0.90,0.10,boxstyle="round,pad=0.05",
+    facecolor=fc,edgecolor=ec,lw=2,transform=ax_r.transAxes))
+ax_r.text(0.5,0.09,f"{'CUMPLE' if av>=0.90 else 'REVISAR'} >90%",ha='center',va='center',
+    fontsize=11,fontweight='bold',color='#1a7a1a' if av>=0.90 else '#CC0000',transform=ax_r.transAxes)
+plt.savefig(GRAFICAS_DIR/"07_resultados_cv.png",dpi=130,bbox_inches='tight',facecolor='white')
+plt.close(); print("  07_resultados_cv.png")
 
 
-# ── RESUMEN FINAL ─────────────────────────────────────────────────
-print("\n" + "=" * 65)
-print("  PIPELINE COMPLETO — LIMPIEZA CON DTW")
-print(f"  Producto principal : {OUTPUT_CSV}")
-print(f"  Registro de basura : {BASURA_CSV}")
-print(f"  Resultados CV      : {RESULTS_CSV}")
-print(f"  Graficas           : {GRAFICAS_DIR}/  (11 imagenes)")
-print(f"  Muestras originales: {len(records_raw)}")
-print(f"  Duplicados         : {total_dup}")
-print(f"  Basura R1 (angulo) : {r1_total}")
-print(f"  Basura R2 (DTW)    : {r2_total}")
-print(f"  Dataset limpio     : {len(df_full)} muestras")
-print(f"  Precision CV media : {media_row['acc_total']*100:.1f}%")
-print(f"  Precision final    : {acc_val*100:.1f}%")
-print(f"  Requisito > 90%    : {'CUMPLIDO' if acc_val >= 0.90 else 'REVISAR K_STD'}")
-print("=" * 65)
+print("\n" + "=" * 60)
+print("  PIPELINE COMPLETO")
+print(f"  CSV principal : {OUTPUT_CSV}")
+print(f"  Basura        : {BASURA_CSV}")
+print(f"  Resultados CV : {RESULTS_CSV}")
+print(f"  Graficas      : {GRAFICAS_DIR}/ (7 imagenes)")
+print(f"  Muestras      : {len(records)} originales → {len(df_full)} limpias")
+print(f"  Eliminadas    : dup={len(dup)} R1={r1t} R2={r2t}")
+print(f"  CV media RF   : {med['acc_total']*100:.1f}%")
+print(f"  Validacion RF : {av*100:.1f}%")
+print("=" * 60)
